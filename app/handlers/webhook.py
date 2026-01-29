@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 
 webhook_bp = Blueprint("webhook", __name__)
 
-@webhook_bp.route("/webhook/", methods=["POST"])
+@webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
 
