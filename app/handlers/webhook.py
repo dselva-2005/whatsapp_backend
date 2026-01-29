@@ -2,16 +2,15 @@ from flask import Blueprint, request, jsonify
 
 webhook_bp = Blueprint("webhook", __name__)
 
-@webhook_bp.route("/webhook", methods=["POST"])
+@webhook_bp.route("/webhook/", methods=["POST"])
 def webhook():
-    data = request.json
+    data = request.get_json(silent=True)
 
     if not data:
         return jsonify({"status": "ignored"}), 200
 
-    print(data)  # log raw payload
+    print("Raw payload:", data)
 
-    # 🔹 handle everything internally
     handle_event(data)
 
     return jsonify({"status": "ok"}), 200
@@ -19,9 +18,9 @@ def webhook():
 
 def handle_event(payload: dict):
     try:
-        entry = payload["entry"][0]
-        change = entry["changes"][0]
-        value = change["value"]
+        entry = payload.get("entry", [])[0]
+        change = entry.get("changes", [])[0]
+        value = change.get("value", {})
 
         if "messages" in value:
             message = value["messages"][0]
