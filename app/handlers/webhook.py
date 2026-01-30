@@ -24,22 +24,26 @@ logger = logging.getLogger("whatsapp_webhook")
 # -------------------------------------------------
 PRODUCTS = {
     "opt_1": {
-        "image": "https://allspray.in/static/images/product1.png",
+        "preview_image": "https://allspray.in/static/images/product1.png",
+        "code_image": "https://allspray.in/static/images/final_network.png",
         "original": 499,
         "discount": 20,
     },
     "opt_2": {
-        "image": "https://allspray.in/static/images/product2.png",
+        "preview_image": "https://allspray.in/static/images/product2.png",
+        "code_image": "https://allspray.in/static/images/code2.png",
         "original": 699,
         "discount": 20,
     },
     "opt_3": {
-        "image": "https://allspray.in/static/images/product3.png",
+        "preview_image": "https://allspray.in/static/images/product3.png",
+        "code_image": "https://allspray.in/static/images/code3.png",
         "original": 599,
         "discount": 49,
     },
     "opt_4": {
-        "image": "https://allspray.in/static/images/product4.png",
+        "preview_image": "https://allspray.in/static/images/product4.png",
+        "code_image": "https://allspray.in/static/images/code4.png",
         "original": 899,
         "discount": 99,
     },
@@ -71,7 +75,7 @@ def send_text(to: str, text: str):
     )
 
 
-def send_image(to: str, image_url: str, caption: str):
+def send_image(to: str, image_url: str, caption: str = ""):
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -90,35 +94,33 @@ def send_image(to: str, image_url: str, caption: str):
     )
 
 
-# 🔥 NEW: Send product previews (image + price)
+# -------------------------------------------------
+# Send product previews (NO selection here)
+# -------------------------------------------------
 def send_product_previews(to: str):
     for opt_id, product in PRODUCTS.items():
-        discounted_price = product["original"] - product["discount"]
+        offer_price = product["original"] - product["discount"]
 
         caption = (
-            f"🛍️ *{opt_id.replace('opt_', 'Product ')}*\n"
+            f"🛍️ *Product {opt_id[-1]}*\n"
             f"MRP: ₹{product['original']}\n"
-            f"🔥 Offer Price: ₹{discounted_price}\n"
-            f"💸 You Save: ₹{product['discount']}"
+            f"🔥 Offer: ₹{offer_price}\n"
+            f"💸 Save: ₹{product['discount']}"
         )
 
-        send_image(to, product["image"], caption)
+        send_image(to, product["preview_image"], caption)
 
 
 def send_options(to: str):
     rows = []
 
     for opt_id, product in PRODUCTS.items():
-        discounted_price = product["original"] - product["discount"]
+        offer_price = product["original"] - product["discount"]
 
         rows.append({
             "id": opt_id,
-            "title": f"{opt_id.replace('opt_', 'Product ')}",
-            "description": (
-                f"MRP ₹{product['original']} → "
-                f"Now ₹{discounted_price} "
-                f"(Save ₹{product['discount']})"
-            ),
+            "title": f"Product {opt_id[-1]}",
+            "description": f"₹{product['original']} → ₹{offer_price}",
         })
 
     payload = {
@@ -129,7 +131,7 @@ def send_options(to: str):
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
-            "body": {"text": "Select ONE product to get your discount 👇"},
+            "body": {"text": "Select ONE product to receive your discount code 👇"},
             "footer": {"text": "Khalifa Hitech Mobile"},
             "action": {
                 "button": "View Products",
@@ -181,89 +183,52 @@ def handle_event(payload: dict):
         user = get_user(from_number)
         state = user[1] if user else "START"
 
-        # ----------------------------
-        # START → Ask name
-        # ----------------------------
+        # START
         if state == "START" and msg_type == "text":
             upsert_user(from_number, state="ASKED_NAME")
-            send_text(
-                from_number,
-                "👋 Welcome to *Khalifa Hitech Mobile!*\n\nPlease tell us your *name*."
-            )
+            send_text(from_number, "👋 Welcome to *Khalifa Hitech Mobile!* \n\nPlease tell us your *name*.")
             return
 
-        # ----------------------------
-        # ASKED_NAME → Save name & show products
-        # ----------------------------
+        # NAME RECEIVED
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
             upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
 
-            send_text(
-                from_number,
-                f"Thanks, *{name}* 😊\n\nHere are today’s exclusive offers 👇"
-            )
-
-            # 🔥 NEW FLOW
+            send_text(from_number, f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇")
             send_product_previews(from_number)
-            send_text(from_number, "👇 Now select ONE product to receive your discount")
             send_options(from_number)
             return
 
-        # ----------------------------
-        # SHOWED_PRODUCTS → Handle selection
-        # ----------------------------
+        # PRODUCT SELECTED
         if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
             if has_user_received(from_number):
-                send_text(
-                    from_number,
-                    "ℹ️ You have already received your discount barcode."
-                )
+                send_text(from_number, "ℹ️ You have already received your discount code.")
                 return
 
             if not can_send_image():
-                send_text(
-                    from_number,
-                    "🚫 Discount quota exhausted. Please try again later."
-                )
+                send_text(from_number, "🚫 Discount quota exhausted. Please try later.")
                 return
 
-            option_id = (
-                message.get("interactive", {})
-                .get("list_reply", {})
-                .get("id")
-            )
-
+            option_id = message.get("interactive", {}).get("list_reply", {}).get("id")
             product = PRODUCTS.get(option_id)
+
             if not product:
                 send_text(from_number, "Invalid selection ❌")
                 return
 
-            caption = (
-                f"Worth ₹{product['original']}\n"
-                f"Only ₹{product['original'] - product['discount']}"
-            )
+            send_text(from_number, "🎁 Here is your exclusive discount code 👇")
 
-            send_text(
-                from_number,
-                "✅ Thanks for choosing *Khalifa Hitech Mobile*!"
-            )
-
-            send_image(from_number, product["image"], caption)
+            # ✅ SEND BARCODE / QR IMAGE ONLY
+            send_image(from_number, product["code_image"], "Show this code at the store")
 
             mark_user_received(from_number)
             increment_sent()
             upsert_user(from_number, state="COMPLETED")
             return
 
-        # ----------------------------
         # COMPLETED
-        # ----------------------------
         if state == "COMPLETED":
-            send_text(
-                from_number,
-                "✅ You have already completed this offer."
-            )
+            send_text(from_number, "✅ You’ve already used this offer.")
             return
 
     except Exception:
