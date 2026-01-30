@@ -67,7 +67,6 @@ def send_text(to: str, text: str):
         "type": "text",
         "text": {"body": text},
     }
-
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
@@ -87,7 +86,6 @@ def send_image(to: str, image_url: str, caption: str = ""):
             "caption": caption,
         },
     }
-
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
@@ -96,7 +94,7 @@ def send_image(to: str, image_url: str, caption: str = ""):
     )
 
 # -------------------------------------------------
-# Send product previews (NO selection here)
+# Send product previews ONLY
 # -------------------------------------------------
 def send_product_previews(to: str):
     for opt_id, product in PRODUCTS.items():
@@ -108,7 +106,6 @@ def send_product_previews(to: str):
             f"🔥 Offer: ₹{offer_price}\n"
             f"💸 Save: ₹{product['discount']}"
         )
-
         send_image(to, product["preview_image"], caption)
 
 
@@ -131,16 +128,9 @@ def send_options(to: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {
-                "type": "text",
-                "text": "🔥 Exclusive Discounts",
-            },
-            "body": {
-                "text": "Select ONE product to receive your discount code 👇",
-            },
-            "footer": {
-                "text": "Khalifa Hitech Mobile",
-            },
+            "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
+            "body": {"text": "Select ONE product to receive your discount code 👇"},
+            "footer": {"text": "Khalifa Hitech Mobile"},
             "action": {
                 "button": "View Products",
                 "sections": [
@@ -166,7 +156,6 @@ def send_options(to: str):
 @webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
-
     if not data:
         return jsonify({"status": "ignored"}), 200
 
@@ -174,7 +163,7 @@ def webhook():
     return jsonify({"status": "ok"}), 200
 
 # -------------------------------------------------
-# Core logic
+# Core logic (SEQUENCE SAFE)
 # -------------------------------------------------
 def handle_event(payload: dict):
     try:
@@ -199,20 +188,19 @@ def handle_event(payload: dict):
             upsert_user(from_number, state="ASKED_NAME")
             send_text(
                 from_number,
-                "👋 Welcome to *Khalifa Hitech Mobile!*\n\n"
-                "Please tell us your *name*."
+                "👋 Welcome to *Khalifa Hitech Mobile!*\n\nPlease tell us your *name*."
             )
             return
 
         # ---------------------
-        # NAME RECEIVED
+        # NAME RECEIVED → SEND IMAGES ONLY
         # ---------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
 
             upsert_user(
                 from_number,
-                state="SHOWED_PRODUCTS",
+                state="SHOWING_IMAGES",
                 name=name,
             )
 
@@ -222,6 +210,14 @@ def handle_event(payload: dict):
             )
 
             send_product_previews(from_number)
+            send_text(from_number, "Reply with *OK* to choose one product 👇")
+            return
+
+        # ---------------------
+        # AFTER IMAGES → SEND OPTIONS
+        # ---------------------
+        if state == "SHOWING_IMAGES" and msg_type == "text":
+            upsert_user(from_number, state="SHOWED_PRODUCTS")
             send_options(from_number)
             return
 
@@ -230,17 +226,11 @@ def handle_event(payload: dict):
         # ---------------------
         if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
             if has_user_received(from_number):
-                send_text(
-                    from_number,
-                    "ℹ️ You have already received your discount code."
-                )
+                send_text(from_number, "ℹ️ You have already received your discount code.")
                 return
 
             if not can_send_image():
-                send_text(
-                    from_number,
-                    "🚫 Discount quota exhausted. Please try later."
-                )
+                send_text(from_number, "🚫 Discount quota exhausted. Please try later.")
                 return
 
             option_id = (
@@ -254,17 +244,8 @@ def handle_event(payload: dict):
                 send_text(from_number, "Invalid selection ❌")
                 return
 
-            send_text(
-                from_number,
-                "🎁 Here is your exclusive discount code 👇"
-            )
-
-            # ✅ SEND BARCODE / QR IMAGE ONLY
-            send_image(
-                from_number,
-                product["code_image"],
-                "Show this code at the store",
-            )
+            send_text(from_number, "🎁 Here is your exclusive discount code 👇")
+            send_image(from_number, product["code_image"], "Show this code at the store")
 
             mark_user_received(from_number)
             increment_sent()
@@ -275,10 +256,7 @@ def handle_event(payload: dict):
         # COMPLETED
         # ---------------------
         if state == "COMPLETED":
-            send_text(
-                from_number,
-                "✅ You’ve already used this offer."
-            )
+            send_text(from_number, "✅ You’ve already used this offer.")
             return
 
     except Exception:
