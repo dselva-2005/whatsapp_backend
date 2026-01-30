@@ -185,12 +185,12 @@ def handle_event(payload):
                 from_number,
                 f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
             )
+            # Send interactive options after all images
+            send_options(from_number)
 
             # Send all product images in sequence
             send_product_previews(from_number)
 
-            # Send interactive options after all images
-            send_options(from_number)
             return
 
         # ---------------------
