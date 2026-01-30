@@ -12,6 +12,7 @@ def init_db():
     conn = get_conn()
     cur = conn.cursor()
 
+    # Global quota
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quota (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -20,6 +21,14 @@ def init_db():
         )
     """)
 
+    # Per-user tracking
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sent_users (
+            phone TEXT PRIMARY KEY
+        )
+    """)
+
+    # Seed quota row
     cur.execute("SELECT COUNT(*) FROM quota")
     if cur.fetchone()[0] == 0:
         cur.execute(
@@ -42,7 +51,9 @@ def get_quota():
 def increment_sent():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE quota SET sent_images = sent_images + 1 WHERE id = 1")
+    cur.execute(
+        "UPDATE quota SET sent_images = sent_images + 1 WHERE id = 1"
+    )
     conn.commit()
     conn.close()
 
@@ -52,7 +63,41 @@ def update_max_quota(value: int):
     cur = conn.cursor()
     cur.execute(
         "UPDATE quota SET max_images = ? WHERE id = 1",
-        (value,)
+        (value,),
     )
     conn.commit()
     conn.close()
+
+
+def has_user_received(phone: str) -> bool:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM sent_users WHERE phone = ?",
+        (phone,),
+    )
+    exists = cur.fetchone() is not None
+    conn.close()
+    return exists
+
+
+def mark_user_received(phone: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO sent_users (phone) VALUES (?)",
+        (phone,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def can_send_image() -> bool:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT max_images, sent_images FROM quota WHERE id = 1"
+    )
+    max_images, sent_images = cur.fetchone()
+    conn.close()
+    return sent_images < max_images

@@ -1,7 +1,14 @@
 import requests
 import logging
 from flask import Blueprint, request, jsonify, current_app
-from app.db import get_quota, increment_sent
+
+from app.db import (
+    get_quota,
+    increment_sent,
+    has_user_received,
+    mark_user_received,
+    can_send_image,
+)
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -129,12 +136,12 @@ def handle_event(payload: dict):
         from_number = message.get("from")
         msg_type = message.get("type")
 
-        # Text → options
+        # 1️⃣ Text → show options
         if msg_type == "text":
             send_options(from_number)
             return
 
-        # Interactive → image (quota guarded)
+        # 2️⃣ Interactive → guarded image send
         if msg_type == "interactive":
             option_id = (
                 message.get("interactive", {})
@@ -142,9 +149,16 @@ def handle_event(payload: dict):
                 .get("id")
             )
 
-            max_images, sent_images = get_quota()
+            # 🚫 User already received
+            if has_user_received(from_number):
+                send_text(
+                    from_number,
+                    "ℹ️ You have already received the image.",
+                )
+                return
 
-            if sent_images >= max_images:
+            # 🚫 Global quota exhausted
+            if not can_send_image():
                 send_text(
                     from_number,
                     "🚫 Image limit reached. Please try again later.",
@@ -156,7 +170,11 @@ def handle_event(payload: dict):
                 send_text(from_number, "Invalid option ❌")
                 return
 
+            # ✅ Send image
             send_image(from_number, image_url, "Here you go 📷")
+
+            # ✅ Persist state
+            mark_user_received(from_number)
             increment_sent()
 
     except Exception:
