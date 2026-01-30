@@ -21,14 +21,22 @@ def init_db():
         )
     """)
 
-    # Per-user tracking
+    # Per-user final receive tracking
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sent_users (
             phone TEXT PRIMARY KEY
         )
     """)
 
-    # Seed quota row
+    # User conversation state
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            phone TEXT PRIMARY KEY,
+            name TEXT,
+            state TEXT NOT NULL
+        )
+    """)
+
     cur.execute("SELECT COUNT(*) FROM quota")
     if cur.fetchone()[0] == 0:
         cur.execute(
@@ -101,3 +109,30 @@ def can_send_image() -> bool:
     max_images, sent_images = cur.fetchone()
     conn.close()
     return sent_images < max_images
+
+
+def get_user(phone: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT name, state FROM users WHERE phone = ?",
+        (phone,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row  # (name, state) or None
+
+
+def upsert_user(phone: str, state: str, name: str | None = None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO users (phone, name, state)
+        VALUES (?, ?, ?)
+        ON CONFLICT(phone)
+        DO UPDATE SET
+            state = excluded.state,
+            name = COALESCE(excluded.name, users.name)
+    """, (phone, name, state))
+    conn.commit()
+    conn.close()

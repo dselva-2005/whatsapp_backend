@@ -3,12 +3,14 @@ import logging
 from flask import Blueprint, request, jsonify, current_app
 
 from app.db import (
-    get_quota,
-    increment_sent,
+    get_user,
+    upsert_user,
     has_user_received,
     mark_user_received,
     can_send_image,
+    increment_sent,
 )
+
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -136,46 +138,68 @@ def handle_event(payload: dict):
         from_number = message.get("from")
         msg_type = message.get("type")
 
-        # 1️⃣ Text → show options
-        if msg_type == "text":
+        user = get_user(from_number)
+        state = user[1] if user else "START"
+
+        # ----------------------------
+        # START → Ask name
+        # ----------------------------
+        if state == "START" and msg_type == "text":
+            upsert_user(from_number, state="ASKED_NAME")
+            send_text(from_number, "👋 Welcome to Khalifa Hitech Mobile!\n\nPlease tell us your *name*.")
+            return
+
+        # ----------------------------
+        # ASKED_NAME → Save name & show products
+        # ----------------------------
+        if state == "ASKED_NAME" and msg_type == "text":
+            name = message["text"]["body"].strip()
+            upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
+            send_text(from_number, f"Thanks, *{name}* 😊\n\nPlease choose a product below:")
             send_options(from_number)
             return
 
-        # 2️⃣ Interactive → guarded image send
-        if msg_type == "interactive":
+        # ----------------------------
+        # SHOWED_PRODUCTS → Handle selection
+        # ----------------------------
+        if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
+            if has_user_received(from_number):
+                send_text(from_number, "ℹ️ You have already received your discount barcode.")
+                return
+
+            if not can_send_image():
+                send_text(from_number, "🚫 Discount quota exhausted. Please try later.")
+                return
+
             option_id = (
                 message.get("interactive", {})
                 .get("list_reply", {})
                 .get("id")
             )
 
-            # 🚫 User already received
-            if has_user_received(from_number):
-                send_text(
-                    from_number,
-                    "ℹ️ You have already received the image.",
-                )
-                return
-
-            # 🚫 Global quota exhausted
-            if not can_send_image():
-                send_text(
-                    from_number,
-                    "🚫 Image limit reached. Please try again later.",
-                )
-                return
-
             image_url = IMAGE_MAP.get(option_id)
             if not image_url:
-                send_text(from_number, "Invalid option ❌")
+                send_text(from_number, "Invalid selection ❌")
                 return
 
-            # ✅ Send image
-            send_image(from_number, image_url, "Here you go 📷")
+            send_text(
+                from_number,
+                "✅ Thanks for choosing *Khalifa Hitech Mobile* and opting for a discount!"
+            )
 
-            # ✅ Persist state
+            send_image(from_number, image_url, "🎁 Your discount barcode")
+
             mark_user_received(from_number)
             increment_sent()
+            upsert_user(from_number, state="COMPLETED")
+            return
+
+        # ----------------------------
+        # COMPLETED
+        # ----------------------------
+        if state == "COMPLETED":
+            send_text(from_number, "✅ You have already completed this offer.")
+            return
 
     except Exception:
         logger.exception("Webhook parse error")
