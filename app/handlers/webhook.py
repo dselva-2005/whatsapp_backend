@@ -1,5 +1,6 @@
 import requests
 import logging
+import time
 from flask import Blueprint, request, jsonify, current_app
 
 from app.db import (
@@ -83,22 +84,26 @@ def send_image(to, image_url, caption=""):
     requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 # -------------------------------------------------
-# Product preview images (COMBINED)
+# Product preview images (send in sequence)
 # -------------------------------------------------
 def send_product_previews(to):
-    message_lines = ["🛍️ *Today’s Offers*:\n"]
+    """
+    Sends all product previews as separate images in sequence.
+    Ensures images are rendered correctly in WhatsApp.
+    """
     for product in PRODUCTS.values():
         offer_price = product["original"] - product["discount"]
-        message_lines.append(
-            f"*{product['name']}*\nMRP: ₹{product['original']}\n"
-            f"🔥 Offer: ₹{offer_price} (Save ₹{product['discount']})\n"
-            f"Preview: {product['preview_image']}\n"
+        caption = (
+            f"🛍️ *{product['name']}*\n"
+            f"MRP: ₹{product['original']}\n"
+            f"🔥 Offer: ₹{offer_price}\n"
+            f"💸 Save: ₹{product['discount']}"
         )
-    full_message = "\n".join(message_lines)
-    send_text(to, full_message)
+        send_image(to, product["preview_image"], caption)
+        time.sleep(0.3)  # small delay to ensure correct sequencing
 
 # -------------------------------------------------
-# Interactive options (NO OK MESSAGE)
+# Interactive options (after all previews)
 # -------------------------------------------------
 def send_options(to):
     rows = []
@@ -181,7 +186,10 @@ def handle_event(payload):
                 f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
             )
 
+            # Send all product images in sequence
             send_product_previews(from_number)
+
+            # Send interactive options after all images
             send_options(from_number)
             return
 
