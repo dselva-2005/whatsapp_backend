@@ -24,24 +24,28 @@ logger = logging.getLogger("whatsapp_webhook")
 # -------------------------------------------------
 PRODUCTS = {
     "opt_1": {
+        "name": "Product 1",
         "preview_image": "https://allspray.in/static/images/product1.png",
         "code_image": "https://allspray.in/static/images/final_network.png",
         "original": 499,
         "discount": 479,
     },
     "opt_2": {
+        "name": "Product 2",
         "preview_image": "https://allspray.in/static/images/product2.png",
         "code_image": "https://allspray.in/static/images/code2.png",
         "original": 699,
         "discount": 679,
     },
     "opt_3": {
+        "name": "Product 3",
         "preview_image": "https://allspray.in/static/images/product3.png",
         "code_image": "https://allspray.in/static/images/code3.png",
         "original": 599,
         "discount": 550,
     },
     "opt_4": {
+        "name": "Product 4",
         "preview_image": "https://allspray.in/static/images/product4.png",
         "code_image": "https://allspray.in/static/images/code4.png",
         "original": 999,
@@ -59,70 +63,54 @@ def _headers():
     }
 
 
-def send_text(to: str, text: str):
+def send_text(to, text):
     payload = {
         "messaging_product": "whatsapp",
-        "recipient_type": "individual",
         "to": to,
         "type": "text",
         "text": {"body": text},
     }
-    requests.post(
-        current_app.config["WHATSAPP_API_URL"],
-        headers=_headers(),
-        json=payload,
-        timeout=10,
-    )
+    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 
-def send_image(to: str, image_url: str, caption: str = ""):
+def send_image(to, image_url, caption=""):
     payload = {
         "messaging_product": "whatsapp",
-        "recipient_type": "individual",
         "to": to,
         "type": "image",
-        "image": {
-            "link": image_url,
-            "caption": caption,
-        },
+        "image": {"link": image_url, "caption": caption},
     }
-    requests.post(
-        current_app.config["WHATSAPP_API_URL"],
-        headers=_headers(),
-        json=payload,
-        timeout=10,
-    )
+    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 # -------------------------------------------------
-# Product previews
+# Product preview images
 # -------------------------------------------------
-def send_product_previews(to: str):
-    for opt_id, product in PRODUCTS.items():
+def send_product_previews(to):
+    for product in PRODUCTS.values():
         offer_price = product["original"] - product["discount"]
-
         caption = (
-            f"🛍️ *Product {opt_id[-1]}*\n"
+            f"🛍️ *{product['name']}*\n"
             f"MRP: ₹{product['original']}\n"
             f"🔥 Offer: ₹{offer_price}\n"
             f"💸 Save: ₹{product['discount']}"
         )
         send_image(to, product["preview_image"], caption)
 
-
-def send_options(to: str):
+# -------------------------------------------------
+# Interactive options (NO OK MESSAGE)
+# -------------------------------------------------
+def send_options(to):
     rows = []
-
     for opt_id, product in PRODUCTS.items():
         offer_price = product["original"] - product["discount"]
         rows.append({
             "id": opt_id,
-            "title": f"Product {opt_id[-1]}",
+            "title": product["name"],
             "description": f"₹{product['original']} → ₹{offer_price}",
         })
 
     payload = {
         "messaging_product": "whatsapp",
-        "recipient_type": "individual",
         "to": to,
         "type": "interactive",
         "interactive": {
@@ -133,24 +121,16 @@ def send_options(to: str):
             "action": {
                 "button": "View Products",
                 "sections": [
-                    {
-                        "title": "Available Products",
-                        "rows": rows,
-                    }
+                    {"title": "Available Products", "rows": rows}
                 ],
             },
         },
     }
 
-    requests.post(
-        current_app.config["WHATSAPP_API_URL"],
-        headers=_headers(),
-        json=payload,
-        timeout=10,
-    )
+    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 # -------------------------------------------------
-# Webhook entrypoint
+# Webhook endpoint
 # -------------------------------------------------
 @webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
@@ -164,18 +144,15 @@ def webhook():
 # -------------------------------------------------
 # Core logic (SEQUENCE SAFE)
 # -------------------------------------------------
-def handle_event(payload: dict):
+def handle_event(payload):
     try:
-        entry = payload.get("entry", [])[0]
-        change = entry.get("changes", [])[0]
-        value = change.get("value", {})
-
+        value = payload["entry"][0]["changes"][0]["value"]
         if "messages" not in value:
             return
 
         message = value["messages"][0]
-        from_number = message.get("from")
-        msg_type = message.get("type")
+        from_number = message["from"]
+        msg_type = message["type"]
 
         user = get_user(from_number)
         state = user[1] if user else "START"
@@ -192,16 +169,11 @@ def handle_event(payload: dict):
             return
 
         # ---------------------
-        # NAME RECEIVED → SEND IMAGES + OPTIONS
+        # NAME RECEIVED
         # ---------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
-
-            upsert_user(
-                from_number,
-                state="SHOWED_PRODUCTS",
-                name=name,
-            )
+            upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
 
             send_text(
                 from_number,
@@ -221,22 +193,14 @@ def handle_event(payload: dict):
                 return
 
             if not can_send_image():
-                send_text(from_number, "🚫 Discount quota exhausted. Please try later.")
+                send_text(from_number, "🚫 Discount quota exhausted.")
                 return
 
-            option_id = (
-                message.get("interactive", {})
-                .get("list_reply", {})
-                .get("id")
-            )
-
-            product = PRODUCTS.get(option_id)
-            if not product:
-                send_text(from_number, "Invalid selection ❌")
-                return
+            opt_id = message["interactive"]["list_reply"]["id"]
+            product = PRODUCTS.get(opt_id)
 
             send_text(from_number, "🎁 Here is your exclusive discount code 👇")
-            send_image(from_number, product["code_image"], "Show this code at the store")
+            send_image(from_number, product["code_image"], "Show this at the store")
 
             mark_user_received(from_number)
             increment_sent()
@@ -247,8 +211,8 @@ def handle_event(payload: dict):
         # COMPLETED
         # ---------------------
         if state == "COMPLETED":
-            send_text(from_number, "✅ You’ve already used this offer.")
+            send_text(from_number, "✅ Offer already used.")
             return
 
     except Exception:
-        logger.exception("Webhook parse error")
+        logger.exception("Webhook error")
