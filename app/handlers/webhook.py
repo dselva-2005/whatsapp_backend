@@ -1,6 +1,7 @@
 import requests
 import logging
 from flask import Blueprint, request, jsonify, current_app
+from app.db import get_quota, increment_sent
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -38,7 +39,6 @@ def send_text(to: str, text: str):
         "type": "text",
         "text": {"body": text},
     }
-
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
@@ -58,7 +58,6 @@ def send_image(to: str, image_url: str, caption: str = ""):
             "caption": caption,
         },
     }
-
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
@@ -75,33 +74,25 @@ def send_options(to: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {
-                "type": "text",
-                "text": "Welcome 👋",
-            },
-            "body": {
-                "text": "Please choose one option below:",
-            },
-            "footer": {
-                "text": "Allspray",
-            },
+            "header": {"type": "text", "text": "Welcome 👋"},
+            "body": {"text": "Please choose one option below:"},
+            "footer": {"text": "Allspray"},
             "action": {
                 "button": "View Options",
                 "sections": [
                     {
                         "title": "Options",
                         "rows": [
-                            {"id": "opt_1", "title": "Option 1", "description": "View image 1"},
-                            {"id": "opt_2", "title": "Option 2", "description": "View image 2"},
-                            {"id": "opt_3", "title": "Option 3", "description": "View image 3"},
-                            {"id": "opt_4", "title": "Option 4", "description": "View image 4"},
+                            {"id": "opt_1", "title": "Option 1"},
+                            {"id": "opt_2", "title": "Option 2"},
+                            {"id": "opt_3", "title": "Option 3"},
+                            {"id": "opt_4", "title": "Option 4"},
                         ],
                     }
                 ],
             },
         },
     }
-
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
@@ -109,19 +100,16 @@ def send_options(to: str):
         timeout=10,
     )
 
-
 # -------------------------------------------------
 # Webhook entrypoint
 # -------------------------------------------------
 @webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
-
     if not data:
         return jsonify({"status": "ignored"}), 200
 
     handle_event(data)
-
     return jsonify({"status": "ok"}), 200
 
 
@@ -138,38 +126,38 @@ def handle_event(payload: dict):
             return
 
         message = value["messages"][0]
-
-        msg_id = message.get("id")
         from_number = message.get("from")
         msg_type = message.get("type")
 
-        logger.info(
-            f"[INCOMING] id={msg_id} from={from_number} type={msg_type}"
-        )
-
-        # 1️⃣ Any text message → send options
+        # Text → options
         if msg_type == "text":
             send_options(from_number)
+            return
 
-        # 2️⃣ Interactive reply → send mapped image
-        elif msg_type == "interactive":
-            interactive = message.get("interactive", {})
-            list_reply = interactive.get("list_reply", {})
-            option_id = list_reply.get("id")
-
-            logger.info(
-                f"[CHOICE] id={msg_id} from={from_number} option={option_id}"
+        # Interactive → image (quota guarded)
+        if msg_type == "interactive":
+            option_id = (
+                message.get("interactive", {})
+                .get("list_reply", {})
+                .get("id")
             )
 
-            image_url = IMAGE_MAP.get(option_id)
-            if image_url:
-                send_image(
-                    from_number,
-                    image_url,
-                    caption="Here you go 📷",
-                )
-            else:
-                send_text(from_number, "Invalid option selected ❌")
+            max_images, sent_images = get_quota()
 
-    except Exception as e:
+            if sent_images >= max_images:
+                send_text(
+                    from_number,
+                    "🚫 Image limit reached. Please try again later.",
+                )
+                return
+
+            image_url = IMAGE_MAP.get(option_id)
+            if not image_url:
+                send_text(from_number, "Invalid option ❌")
+                return
+
+            send_image(from_number, image_url, "Here you go 📷")
+            increment_sent()
+
+    except Exception:
         logger.exception("Webhook parse error")

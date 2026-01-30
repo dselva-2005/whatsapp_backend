@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Image Quota</title>
+    <style>
+        body {
+            font-family: system-ui;
+            max-width: 500px;
+            margin: 50px auto;
+        }
+        input, button {
+            padding: 8px;
+            width: 100%;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>📊 Image Quota Dashboard</h2>
+
+<p><strong>Max Images:</strong> {{ quota.max_images }}</p>
+<p><strong>Images Sent:</strong> {{ quota.images_sent }}</p>
+
+<hr>
+
+<form method="post">
+    <label>Update Max Images</label>
+    <input type="number" name="max_images" value="{{ quota.max_images }}" required>
+    <button type="submit">Update</button>
+</form>
+
+</body>
+</html>
