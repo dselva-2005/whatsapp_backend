@@ -1,31 +1,27 @@
-import time
 import requests
-from flask import Flask, request, jsonify
+import logging
+from flask import Blueprint, request, jsonify, current_app
 
-app = Flask(__name__)
+from app.db import (
+    get_user,
+    upsert_user,
+    has_user_received,
+    mark_user_received,
+    can_send_image,
+    increment_sent,
+)
 
-# =====================
-# CONFIG
-# =====================
-ACCESS_TOKEN = "YOUR_WHATSAPP_TOKEN"
-PHONE_NUMBER_ID = "YOUR_PHONE_NUMBER_ID"
-VERIFY_TOKEN = "VERIFY_ME"
+webhook_bp = Blueprint("webhook", __name__)
 
-WHATSAPP_URL = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
-HEADERS = {
-    "Authorization": f"Bearer {ACCESS_TOKEN}",
-    "Content-Type": "application/json"
-}
+# -------------------------------------------------
+# Logging
+# -------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("whatsapp_webhook")
 
-# =====================
-# IN-MEMORY DB (simple)
-# =====================
-USERS = {}
-
-# =====================
-# PRODUCT CATALOG
-# =====================
-
+# -------------------------------------------------
+# Product configuration
+# -------------------------------------------------
 PRODUCTS = {
     "opt_1": {
         "preview_image": "https://allspray.in/static/images/product1.png",
@@ -53,156 +49,237 @@ PRODUCTS = {
     },
 }
 
-# =====================
-# HELPERS
-# =====================
-def send_text(to, text):
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+def _headers():
+    return {
+        "Content-Type": "application/json",
+        "apikey": current_app.config["WHATSAPP_TOKEN"],
+    }
+
+
+def send_text(to: str, text: str):
     payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": to,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": text},
     }
-    requests.post(WHATSAPP_URL, headers=HEADERS, json=payload)
+
+    requests.post(
+        current_app.config["WHATSAPP_API_URL"],
+        headers=_headers(),
+        json=payload,
+        timeout=10,
+    )
 
 
-def send_image(to, image_url, caption=None):
+def send_image(to: str, image_url: str, caption: str = ""):
     payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": to,
         "type": "image",
         "image": {
-            "link": image_url
-        }
-    }
-    if caption:
-        payload["image"]["caption"] = caption
-
-    requests.post(WHATSAPP_URL, headers=HEADERS, json=payload)
-
-
-def send_options(to):
-    rows = []
-    for pid, product in PRODUCTS.items():
-        rows.append({
-            "id": pid,
-            "title": product["name"],
-            "description": f"Offer ₹{product['original'] - product['discount']}"
-        })
-
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "body": {
-                "text": "Please select one product 👇"
-            },
-            "action": {
-                "button": "View Products",
-                "sections": [{
-                    "title": "Available Offers",
-                    "rows": rows
-                }]
-            }
-        }
+            "link": image_url,
+            "caption": caption,
+        },
     }
 
-    requests.post(WHATSAPP_URL, headers=HEADERS, json=payload)
+    requests.post(
+        current_app.config["WHATSAPP_API_URL"],
+        headers=_headers(),
+        json=payload,
+        timeout=10,
+    )
 
-
-def send_product_previews(to):
-    for pid, product in PRODUCTS.items():
-        offer = product["original"] - product["discount"]
+# -------------------------------------------------
+# Send product previews (NO selection here)
+# -------------------------------------------------
+def send_product_previews(to: str):
+    for opt_id, product in PRODUCTS.items():
+        offer_price = product["original"] - product["discount"]
 
         caption = (
-            f"🛍️ *{product['name']}*\n"
+            f"🛍️ *Product {opt_id[-1]}*\n"
             f"MRP: ₹{product['original']}\n"
-            f"🔥 Offer: ₹{offer}\n"
+            f"🔥 Offer: ₹{offer_price}\n"
             f"💸 Save: ₹{product['discount']}"
         )
 
         send_image(to, product["preview_image"], caption)
-        time.sleep(0.8)  # pacing between images
 
 
-# =====================
-# WEBHOOK
-# =====================
-@app.route("/webhook", methods=["GET", "POST"])
+def send_options(to: str):
+    rows = []
+
+    for opt_id, product in PRODUCTS.items():
+        offer_price = product["original"] - product["discount"]
+
+        rows.append({
+            "id": opt_id,
+            "title": f"Product {opt_id[-1]}",
+            "description": f"₹{product['original']} → ₹{offer_price}",
+        })
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {
+                "type": "text",
+                "text": "🔥 Exclusive Discounts",
+            },
+            "body": {
+                "text": "Select ONE product to receive your discount code 👇",
+            },
+            "footer": {
+                "text": "Khalifa Hitech Mobile",
+            },
+            "action": {
+                "button": "View Products",
+                "sections": [
+                    {
+                        "title": "Available Products",
+                        "rows": rows,
+                    }
+                ],
+            },
+        },
+    }
+
+    requests.post(
+        current_app.config["WHATSAPP_API_URL"],
+        headers=_headers(),
+        json=payload,
+        timeout=10,
+    )
+
+# -------------------------------------------------
+# Webhook entrypoint
+# -------------------------------------------------
+@webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
-    if request.method == "GET":
-        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
-            return request.args.get("hub.challenge")
-        return "Invalid token", 403
+    data = request.get_json(silent=True)
 
-    data = request.get_json()
+    if not data:
+        return jsonify({"status": "ignored"}), 200
 
+    handle_event(data)
+    return jsonify({"status": "ok"}), 200
+
+# -------------------------------------------------
+# Core logic
+# -------------------------------------------------
+def handle_event(payload: dict):
     try:
-        entry = data["entry"][0]
-        change = entry["changes"][0]
-        value = change["value"]
+        entry = payload.get("entry", [])[0]
+        change = entry.get("changes", [])[0]
+        value = change.get("value", {})
+
+        if "messages" not in value:
+            return
+
         message = value["messages"][0]
+        from_number = message.get("from")
+        msg_type = message.get("type")
 
-        from_number = message["from"]
-        msg_type = message["type"]
+        user = get_user(from_number)
+        state = user[1] if user else "START"
 
-        user = USERS.get(from_number, {"state": "NEW"})
+        # ---------------------
+        # START
+        # ---------------------
+        if state == "START" and msg_type == "text":
+            upsert_user(from_number, state="ASKED_NAME")
+            send_text(
+                from_number,
+                "👋 Welcome to *Khalifa Hitech Mobile!*\n\n"
+                "Please tell us your *name*."
+            )
+            return
 
-        # =====================
-        # NEW USER
-        # =====================
-        if user["state"] == "NEW":
-            send_text(from_number, "Hi 👋\nWhat’s your name?")
-            USERS[from_number] = {"state": "ASKED_NAME"}
-            return jsonify(success=True)
-
-        # =====================
+        # ---------------------
         # NAME RECEIVED
-        # =====================
-        if user["state"] == "ASKED_NAME" and msg_type == "text":
+        # ---------------------
+        if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
-            USERS[from_number] = {
-                "state": "SHOWED_PRODUCTS",
-                "name": name
-            }
 
-            send_text(from_number, f"Thanks, *{name}* 😊\nHere are today’s offers 👇")
-
-            # 1️⃣ Images first
-            send_product_previews(from_number)
-
-            # 2️⃣ HARD BARRIER
-            time.sleep(2)
-
-            # 3️⃣ Then options
-            send_text(from_number, "👇 Select ONE product below")
-            time.sleep(1)
-            send_options(from_number)
-
-            return jsonify(success=True)
-
-        # =====================
-        # PRODUCT SELECTED
-        # =====================
-        if msg_type == "interactive":
-            pid = message["interactive"]["list_reply"]["id"]
-            product = PRODUCTS.get(pid)
+            upsert_user(
+                from_number,
+                state="SHOWED_PRODUCTS",
+                name=name,
+            )
 
             send_text(
                 from_number,
-                f"✅ You selected *{product['name']}*\nOur team will contact you shortly."
+                f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
             )
 
-            USERS[from_number]["state"] = "DONE"
-            return jsonify(success=True)
+            send_product_previews(from_number)
+            send_options(from_number)
+            return
 
-    except Exception as e:
-        print("Error:", e)
+        # ---------------------
+        # PRODUCT SELECTED
+        # ---------------------
+        if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
+            if has_user_received(from_number):
+                send_text(
+                    from_number,
+                    "ℹ️ You have already received your discount code."
+                )
+                return
 
-    return jsonify(success=True)
+            if not can_send_image():
+                send_text(
+                    from_number,
+                    "🚫 Discount quota exhausted. Please try later."
+                )
+                return
 
+            option_id = (
+                message.get("interactive", {})
+                .get("list_reply", {})
+                .get("id")
+            )
 
-if __name__ == "__main__":
-    app.run(port=5000)
+            product = PRODUCTS.get(option_id)
+            if not product:
+                send_text(from_number, "Invalid selection ❌")
+                return
+
+            send_text(
+                from_number,
+                "🎁 Here is your exclusive discount code 👇"
+            )
+
+            # ✅ SEND BARCODE / QR IMAGE ONLY
+            send_image(
+                from_number,
+                product["code_image"],
+                "Show this code at the store",
+            )
+
+            mark_user_received(from_number)
+            increment_sent()
+            upsert_user(from_number, state="COMPLETED")
+            return
+
+        # ---------------------
+        # COMPLETED
+        # ---------------------
+        if state == "COMPLETED":
+            send_text(
+                from_number,
+                "✅ You’ve already used this offer."
+            )
+            return
+
+    except Exception:
+        logger.exception("Webhook parse error")
