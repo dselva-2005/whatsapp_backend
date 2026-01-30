@@ -11,7 +11,6 @@ from app.db import (
     increment_sent,
 )
 
-
 webhook_bp = Blueprint("webhook", __name__)
 
 # -------------------------------------------------
@@ -21,13 +20,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whatsapp_webhook")
 
 # -------------------------------------------------
-# Option → Image mapping
+# Product configuration
 # -------------------------------------------------
-IMAGE_MAP = {
-    "opt_1": "https://allspray.in/static/images/final_network.png",
-    "opt_2": "https://allspray.in/static/images/sample2.png",
-    "opt_3": "https://allspray.in/static/images/sample3.png",
-    "opt_4": "https://allspray.in/static/images/sample4.png",
+PRODUCTS = {
+    "opt_1": {
+        "image": "https://allspray.in/static/images/product1.png",
+        "original": 499,
+        "discount": 20,
+    },
+    "opt_2": {
+        "image": "https://allspray.in/static/images/product2.png",
+        "original": 699,
+        "discount": 20,
+    },
+    "opt_3": {
+        "image": "https://allspray.in/static/images/product3.png",
+        "original": 599,
+        "discount": 49,
+    },
+    "opt_4": {
+        "image": "https://allspray.in/static/images/product4.png",
+        "original": 899,
+        "discount": 99,
+    },
 }
 
 # -------------------------------------------------
@@ -56,7 +71,7 @@ def send_text(to: str, text: str):
     )
 
 
-def send_image(to: str, image_url: str, caption: str = ""):
+def send_image(to: str, image_url: str, caption: str):
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -83,19 +98,19 @@ def send_options(to: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Welcome 👋"},
-            "body": {"text": "Please choose one option below:"},
-            "footer": {"text": "Allspray"},
+            "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
+            "body": {"text": "Choose one product to get your discount:"},
+            "footer": {"text": "Khalifa Hitech Mobile"},
             "action": {
-                "button": "View Options",
+                "button": "View Products",
                 "sections": [
                     {
-                        "title": "Options",
+                        "title": "Available Products",
                         "rows": [
-                            {"id": "opt_1", "title": "Option 1"},
-                            {"id": "opt_2", "title": "Option 2"},
-                            {"id": "opt_3", "title": "Option 3"},
-                            {"id": "opt_4", "title": "Option 4"},
+                            {"id": "opt_1", "title": "Product 1"},
+                            {"id": "opt_2", "title": "Product 2"},
+                            {"id": "opt_3", "title": "Product 3"},
+                            {"id": "opt_4", "title": "Product 4"},
                         ],
                     }
                 ],
@@ -121,7 +136,6 @@ def webhook():
     handle_event(data)
     return jsonify({"status": "ok"}), 200
 
-
 # -------------------------------------------------
 # Core logic
 # -------------------------------------------------
@@ -146,7 +160,10 @@ def handle_event(payload: dict):
         # ----------------------------
         if state == "START" and msg_type == "text":
             upsert_user(from_number, state="ASKED_NAME")
-            send_text(from_number, "👋 Welcome to Khalifa Hitech Mobile!\n\nPlease tell us your *name*.")
+            send_text(
+                from_number,
+                "👋 Welcome to *Khalifa Hitech Mobile!*\n\nPlease tell us your *name*."
+            )
             return
 
         # ----------------------------
@@ -155,7 +172,10 @@ def handle_event(payload: dict):
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
             upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
-            send_text(from_number, f"Thanks, *{name}* 😊\n\nPlease choose a product below:")
+            send_text(
+                from_number,
+                f"Thanks, *{name}* 😊\n\nChoose a product below to get your discount 👇"
+            )
             send_options(from_number)
             return
 
@@ -164,11 +184,17 @@ def handle_event(payload: dict):
         # ----------------------------
         if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
             if has_user_received(from_number):
-                send_text(from_number, "ℹ️ You have already received your discount barcode.")
+                send_text(
+                    from_number,
+                    "ℹ️ You have already received your discount barcode."
+                )
                 return
 
             if not can_send_image():
-                send_text(from_number, "🚫 Discount quota exhausted. Please try later.")
+                send_text(
+                    from_number,
+                    "🚫 Discount quota exhausted. Please try again later."
+                )
                 return
 
             option_id = (
@@ -177,17 +203,26 @@ def handle_event(payload: dict):
                 .get("id")
             )
 
-            image_url = IMAGE_MAP.get(option_id)
-            if not image_url:
+            product = PRODUCTS.get(option_id)
+            if not product:
                 send_text(from_number, "Invalid selection ❌")
                 return
+
+            caption = (
+                f"Worth Rs {product['original']}\n"
+                f"Only Rs {product['discount']}"
+            )
 
             send_text(
                 from_number,
                 "✅ Thanks for choosing *Khalifa Hitech Mobile* and opting for a discount!"
             )
 
-            send_image(from_number, image_url, "🎁 Your discount barcode")
+            send_image(
+                from_number,
+                product["image"],
+                caption
+            )
 
             mark_user_received(from_number)
             increment_sent()
@@ -198,7 +233,10 @@ def handle_event(payload: dict):
         # COMPLETED
         # ----------------------------
         if state == "COMPLETED":
-            send_text(from_number, "✅ You have already completed this offer.")
+            send_text(
+                from_number,
+                "✅ You have already completed this offer."
+            )
             return
 
     except Exception:
