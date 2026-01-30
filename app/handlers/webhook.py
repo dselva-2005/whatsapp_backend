@@ -44,8 +44,8 @@ PRODUCTS = {
     "opt_4": {
         "preview_image": "https://allspray.in/static/images/product4.png",
         "code_image": "https://allspray.in/static/images/code4.png",
-        "original": 899,
-        "discount": 99,
+        "original": 999,
+        "discount": 899,
     },
 }
 
@@ -94,7 +94,7 @@ def send_image(to: str, image_url: str, caption: str = ""):
     )
 
 # -------------------------------------------------
-# Send product previews ONLY
+# Product previews
 # -------------------------------------------------
 def send_product_previews(to: str):
     for opt_id, product in PRODUCTS.items():
@@ -114,7 +114,6 @@ def send_options(to: str):
 
     for opt_id, product in PRODUCTS.items():
         offer_price = product["original"] - product["discount"]
-
         rows.append({
             "id": opt_id,
             "title": f"Product {opt_id[-1]}",
@@ -193,14 +192,14 @@ def handle_event(payload: dict):
             return
 
         # ---------------------
-        # NAME RECEIVED → SEND IMAGES ONLY
+        # NAME RECEIVED → SEND IMAGES + OPTIONS
         # ---------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
 
             upsert_user(
                 from_number,
-                state="SHOWING_IMAGES",
+                state="SHOWED_PRODUCTS",
                 name=name,
             )
 
@@ -210,14 +209,6 @@ def handle_event(payload: dict):
             )
 
             send_product_previews(from_number)
-            send_text(from_number, "Reply with *OK* to choose one product 👇")
-            return
-
-        # ---------------------
-        # AFTER IMAGES → SEND OPTIONS
-        # ---------------------
-        if state == "SHOWING_IMAGES" and msg_type == "text":
-            upsert_user(from_number, state="SHOWED_PRODUCTS")
             send_options(from_number)
             return
 
