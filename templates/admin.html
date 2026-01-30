@@ -6,13 +6,16 @@
 <body>
   <h2>Image Send Quota</h2>
 
+  <p><b>Images sent:</b> {{ sent_images }}</p>
+  <p><b>Max allowed:</b> {{ max_images }}</p>
+
+  <hr>
+
   <form method="POST">
-    <label>Max Images Allowed:</label><br><br>
-    <input type="number" name="quota" value="{{ quota }}" required>
+    <label>Update Max Images:</label><br><br>
+    <input type="number" name="quota" value="{{ max_images }}" required>
     <br><br>
     <button type="submit">Update</button>
   </form>
-
-  <p>Current quota: <b>{{ quota }}</b></p>
 </body>
 </html>

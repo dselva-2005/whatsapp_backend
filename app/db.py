@@ -33,20 +33,16 @@ def init_db():
 def get_quota():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT max_images, sent_images FROM quota WHERE id = 1"
-    )
+    cur.execute("SELECT max_images, sent_images FROM quota WHERE id = 1")
     row = cur.fetchone()
     conn.close()
-    return row
+    return row  # (max_images, sent_images)
 
 
 def increment_sent():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE quota SET sent_images = sent_images + 1 WHERE id = 1"
-    )
+    cur.execute("UPDATE quota SET sent_images = sent_images + 1 WHERE id = 1")
     conn.commit()
     conn.close()
 
@@ -56,7 +52,7 @@ def update_max_quota(value: int):
     cur = conn.cursor()
     cur.execute(
         "UPDATE quota SET max_images = ? WHERE id = 1",
-        (value,),
+        (value,)
     )
     conn.commit()
     conn.close()

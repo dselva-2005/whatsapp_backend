@@ -1,19 +1,23 @@
-from flask import render_template, request, redirect
-from app.db import get_db
+from flask import Blueprint, render_template, request, redirect, url_for
+from app.db import get_quota, update_max_quota
 
-def quota_page():
-    db = get_db()
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+
+@admin_bp.route("/quota", methods=["GET", "POST"])
+def quota():
     if request.method == "POST":
-        new_quota = int(request.form["quota"])
-        db.execute(
-            "UPDATE quota SET limit_value = ? WHERE id = 1",
-            (new_quota,)
-        )
-        db.commit()
-        return redirect("/admin/quota")
+        new_quota = request.form.get("quota")
 
-    cur = db.execute("SELECT limit_value FROM quota WHERE id = 1")
-    quota = cur.fetchone()[0]
+        if new_quota and new_quota.isdigit():
+            update_max_quota(int(new_quota))
 
-    return render_template("admin.html", quota=quota)
+        return redirect(url_for("admin.quota"))
+
+    max_images, sent_images = get_quota()
+
+    return render_template(
+        "admin.html",
+        max_images=max_images,
+        sent_images=sent_images
+    )
