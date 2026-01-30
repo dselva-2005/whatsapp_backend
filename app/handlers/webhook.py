@@ -83,18 +83,19 @@ def send_image(to, image_url, caption=""):
     requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 # -------------------------------------------------
-# Product preview images
+# Product preview images (COMBINED)
 # -------------------------------------------------
 def send_product_previews(to):
+    message_lines = ["🛍️ *Today’s Offers*:\n"]
     for product in PRODUCTS.values():
         offer_price = product["original"] - product["discount"]
-        caption = (
-            f"🛍️ *{product['name']}*\n"
-            f"MRP: ₹{product['original']}\n"
-            f"🔥 Offer: ₹{offer_price}\n"
-            f"💸 Save: ₹{product['discount']}"
+        message_lines.append(
+            f"*{product['name']}*\nMRP: ₹{product['original']}\n"
+            f"🔥 Offer: ₹{offer_price} (Save ₹{product['discount']})\n"
+            f"Preview: {product['preview_image']}\n"
         )
-        send_image(to, product["preview_image"], caption)
+    full_message = "\n".join(message_lines)
+    send_text(to, full_message)
 
 # -------------------------------------------------
 # Interactive options (NO OK MESSAGE)
