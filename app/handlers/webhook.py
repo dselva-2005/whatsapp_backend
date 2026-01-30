@@ -91,6 +91,21 @@ def send_image(to: str, image_url: str, caption: str):
 
 
 def send_options(to: str):
+    rows = []
+
+    for opt_id, product in PRODUCTS.items():
+        discounted_price = product["original"] - product["discount"]
+
+        rows.append({
+            "id": opt_id,
+            "title": f"{opt_id.replace('opt_', 'Product ')}",
+            "description": (
+                f"MRP ₹{product['original']} → "
+                f"Now ₹{discounted_price} "
+                f"(Save ₹{product['discount']})"
+            ),
+        })
+
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -99,24 +114,22 @@ def send_options(to: str):
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
-            "body": {"text": "Choose one product to get your discount:"},
+            "body": {
+                "text": "Choose a product to see the offer details 👇"
+            },
             "footer": {"text": "Khalifa Hitech Mobile"},
             "action": {
                 "button": "View Products",
                 "sections": [
                     {
                         "title": "Available Products",
-                        "rows": [
-                            {"id": "opt_1", "title": "Product 1"},
-                            {"id": "opt_2", "title": "Product 2"},
-                            {"id": "opt_3", "title": "Product 3"},
-                            {"id": "opt_4", "title": "Product 4"},
-                        ],
+                        "rows": rows,
                     }
                 ],
             },
         },
     }
+
     requests.post(
         current_app.config["WHATSAPP_API_URL"],
         headers=_headers(),
