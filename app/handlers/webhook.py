@@ -90,6 +90,21 @@ def send_image(to: str, image_url: str, caption: str):
     )
 
 
+# 🔥 NEW: Send product previews (image + price)
+def send_product_previews(to: str):
+    for opt_id, product in PRODUCTS.items():
+        discounted_price = product["original"] - product["discount"]
+
+        caption = (
+            f"🛍️ *{opt_id.replace('opt_', 'Product ')}*\n"
+            f"MRP: ₹{product['original']}\n"
+            f"🔥 Offer Price: ₹{discounted_price}\n"
+            f"💸 You Save: ₹{product['discount']}"
+        )
+
+        send_image(to, product["image"], caption)
+
+
 def send_options(to: str):
     rows = []
 
@@ -114,9 +129,7 @@ def send_options(to: str):
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
-            "body": {
-                "text": "Choose a product to see the offer details 👇"
-            },
+            "body": {"text": "Select ONE product to get your discount 👇"},
             "footer": {"text": "Khalifa Hitech Mobile"},
             "action": {
                 "button": "View Products",
@@ -185,10 +198,15 @@ def handle_event(payload: dict):
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
             upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
+
             send_text(
                 from_number,
-                f"Thanks, *{name}* 😊\n\nChoose a product below to get your discount 👇"
+                f"Thanks, *{name}* 😊\n\nHere are today’s exclusive offers 👇"
             )
+
+            # 🔥 NEW FLOW
+            send_product_previews(from_number)
+            send_text(from_number, "👇 Now select ONE product to receive your discount")
             send_options(from_number)
             return
 
@@ -222,20 +240,16 @@ def handle_event(payload: dict):
                 return
 
             caption = (
-                f"Worth Rs {product['original']}\n"
-                f"Only Rs {product['discount']}"
+                f"Worth ₹{product['original']}\n"
+                f"Only ₹{product['original'] - product['discount']}"
             )
 
             send_text(
                 from_number,
-                "✅ Thanks for choosing *Khalifa Hitech Mobile* and opting for a discount!"
+                "✅ Thanks for choosing *Khalifa Hitech Mobile*!"
             )
 
-            send_image(
-                from_number,
-                product["image"],
-                caption
-            )
+            send_image(from_number, product["image"], caption)
 
             mark_user_received(from_number)
             increment_sent()
