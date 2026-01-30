@@ -1,11 +1,18 @@
 import requests
+import logging
 from flask import Blueprint, request, jsonify, current_app
 
 webhook_bp = Blueprint("webhook", __name__)
 
-# -----------------------------
+# -------------------------------------------------
+# Logging
+# -------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("whatsapp_webhook")
+
+# -------------------------------------------------
 # Option → Image mapping
-# -----------------------------
+# -------------------------------------------------
 IMAGE_MAP = {
     "opt_1": "https://allspray.in/static/images/final_network.png",
     "opt_2": "https://allspray.in/static/images/sample2.png",
@@ -13,10 +20,9 @@ IMAGE_MAP = {
     "opt_4": "https://allspray.in/static/images/sample4.png",
 }
 
-
-# -----------------------------
+# -------------------------------------------------
 # Helpers
-# -----------------------------
+# -------------------------------------------------
 def _headers():
     return {
         "Content-Type": "application/json",
@@ -85,26 +91,10 @@ def send_options(to: str):
                     {
                         "title": "Options",
                         "rows": [
-                            {
-                                "id": "opt_1",
-                                "title": "Option 1",
-                                "description": "View image 1",
-                            },
-                            {
-                                "id": "opt_2",
-                                "title": "Option 2",
-                                "description": "View image 2",
-                            },
-                            {
-                                "id": "opt_3",
-                                "title": "Option 3",
-                                "description": "View image 3",
-                            },
-                            {
-                                "id": "opt_4",
-                                "title": "Option 4",
-                                "description": "View image 4",
-                            },
+                            {"id": "opt_1", "title": "Option 1", "description": "View image 1"},
+                            {"id": "opt_2", "title": "Option 2", "description": "View image 2"},
+                            {"id": "opt_3", "title": "Option 3", "description": "View image 3"},
+                            {"id": "opt_4", "title": "Option 4", "description": "View image 4"},
                         ],
                     }
                 ],
@@ -120,9 +110,9 @@ def send_options(to: str):
     )
 
 
-# -----------------------------
+# -------------------------------------------------
 # Webhook entrypoint
-# -----------------------------
+# -------------------------------------------------
 @webhook_bp.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
@@ -130,16 +120,14 @@ def webhook():
     if not data:
         return jsonify({"status": "ignored"}), 200
 
-    print("Raw payload:", data)
-
     handle_event(data)
 
     return jsonify({"status": "ok"}), 200
 
 
-# -----------------------------
+# -------------------------------------------------
 # Core logic
-# -----------------------------
+# -------------------------------------------------
 def handle_event(payload: dict):
     try:
         entry = payload.get("entry", [])[0]
@@ -150,10 +138,14 @@ def handle_event(payload: dict):
             return
 
         message = value["messages"][0]
-        print("Incoming message:", message)
 
+        msg_id = message.get("id")
         from_number = message.get("from")
         msg_type = message.get("type")
+
+        logger.info(
+            f"[INCOMING] id={msg_id} from={from_number} type={msg_type}"
+        )
 
         # 1️⃣ Any text message → send options
         if msg_type == "text":
@@ -165,6 +157,10 @@ def handle_event(payload: dict):
             list_reply = interactive.get("list_reply", {})
             option_id = list_reply.get("id")
 
+            logger.info(
+                f"[CHOICE] id={msg_id} from={from_number} option={option_id}"
+            )
+
             image_url = IMAGE_MAP.get(option_id)
             if image_url:
                 send_image(
@@ -172,6 +168,8 @@ def handle_event(payload: dict):
                     image_url,
                     caption="Here you go 📷",
                 )
+            else:
+                send_text(from_number, "Invalid option selected ❌")
 
     except Exception as e:
-        print("Parse error:", e)
+        logger.exception("Webhook parse error")
