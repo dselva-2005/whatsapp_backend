@@ -20,6 +20,18 @@ def headers():
     }
 
 
+def format_price(product: dict) -> str:
+    original = product["original"]
+    you_save = product["discount"]
+    offer = original - you_save
+
+    return (
+        f"Original: ₹{original}\n"
+        f"You save: ₹{you_save}\n"
+        f"Offer: ₹{offer}"
+    )
+
+
 def run():
     r = redis.Redis(
         host=Config.REDIS_HOST,
@@ -59,7 +71,7 @@ def run():
                 session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
             # -------------------------
-            # SEND IMAGE
+            # SEND IMAGE (DISCOUNT CODE)
             # -------------------------
             elif task_type == "send_image":
                 payload = {
@@ -74,34 +86,48 @@ def run():
                 session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
             # -------------------------
-            # SEND PRODUCT PREVIEWS
+            # SEND PRODUCT PREVIEWS (WITH PRICE INFO)
             # -------------------------
             elif task_type == "send_product_previews":
                 for product in PRODUCTS.values():
+                    caption = (
+                        f"*{product['name']}*\n"
+                        f"{format_price(product)}"
+                    )
+
                     payload = {
                         "messaging_product": "whatsapp",
                         "to": to,
                         "type": "image",
                         "image": {
                             "link": product["preview_image"],
-                            "caption": product["name"],
+                            "caption": caption,
                         },
                     }
+
                     session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
-                    time.sleep(0.3)
+                    time.sleep(0.3)  # WhatsApp rate-safety
 
             # -------------------------
             # SEND OPTIONS (INTERACTIVE LIST)
             # -------------------------
             elif task_type == "send_options":
-                rows = [
-                    {
+                rows = []
+
+                for pid, product in PRODUCTS.items():
+                    original = product["original"]
+                    you_save = product["discount"]
+                    offer = original - you_save
+
+                    rows.append({
                         "id": pid,
                         "title": product["name"],
-                        "description": product.get("description", ""),
-                    }
-                    for pid, product in PRODUCTS.items()
-                ]
+                        "description": (
+                            f"Original ₹{original} | "
+                            f"You save ₹{you_save} | "
+                            f"Offer ₹{offer}"
+                        ),
+                    })
 
                 payload = {
                     "messaging_product": "whatsapp",
