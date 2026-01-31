@@ -30,7 +30,7 @@ def run():
     session = requests.Session()
     session.headers.update(headers())
 
-    logger.info("🚀 WhatsApp worker started")
+    logger.info("🚀 WhatsApp worker started and waiting for tasks...")
 
     while True:
         try:
@@ -43,6 +43,8 @@ def run():
             if not task_type or not to:
                 logger.warning(f"⚠️ Invalid task skipped: {task}")
                 continue
+
+            logger.info(f"➡️ Processing task: {task_type} → {to}")
 
             # -------------------------
             # SEND TEXT
@@ -72,7 +74,7 @@ def run():
                 session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
             # -------------------------
-            # SEND PRODUCT PREVIEWS (SEQUENTIAL)
+            # SEND PRODUCT PREVIEWS
             # -------------------------
             elif task_type == "send_product_previews":
                 for product in PRODUCTS.values():
@@ -86,19 +88,20 @@ def run():
                         },
                     }
                     session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
-                    time.sleep(0.3)  # WhatsApp rate safety
+                    time.sleep(0.3)
 
             # -------------------------
-            # SEND INTERACTIVE OPTIONS
+            # SEND OPTIONS (INTERACTIVE LIST)
             # -------------------------
             elif task_type == "send_options":
-                rows = []
-                for pid, product in PRODUCTS.items():
-                    rows.append({
+                rows = [
+                    {
                         "id": pid,
                         "title": product["name"],
                         "description": product.get("description", ""),
-                    })
+                    }
+                    for pid, product in PRODUCTS.items()
+                ]
 
                 payload = {
                     "messaging_product": "whatsapp",
@@ -126,6 +129,10 @@ def run():
             else:
                 logger.warning(f"⚠️ Unknown task type: {task_type}")
 
-        except Exception as e:
+        except Exception:
             logger.exception("🔥 Worker error")
             time.sleep(1)
+
+
+if __name__ == "__main__":
+    run()
