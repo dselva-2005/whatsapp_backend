@@ -85,10 +85,12 @@ def run():
                 }
                 session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
-            # -------------------------
-            # SEND PRODUCT PREVIEWS (WITH PRICE INFO)
-            # -------------------------
-            elif task_type == "send_product_previews":
+            # -------------------------------------------------
+            # SEND PRODUCTS (IMAGES FIRST → OPTIONS LAST)
+            # -------------------------------------------------
+            elif task_type == "send_products_with_options":
+
+                # 1️⃣ Product preview images
                 for product in PRODUCTS.values():
                     caption = (
                         f"*{product['name']}*\n"
@@ -105,15 +107,15 @@ def run():
                         },
                     }
 
-                    session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
-                    time.sleep(0.3)  # WhatsApp rate-safety
+                    session.post(
+                        Config.WHATSAPP_API_URL,
+                        json=payload,
+                        timeout=10
+                    )
+                    time.sleep(0.4)  # rate-safe + order-safe
 
-            # -------------------------
-            # SEND OPTIONS (INTERACTIVE LIST)
-            # -------------------------
-            elif task_type == "send_options":
+                # 2️⃣ Interactive options (AFTER images)
                 rows = []
-
                 for pid, product in PRODUCTS.items():
                     original = product["original"]
                     you_save = product["discount"]
@@ -129,7 +131,7 @@ def run():
                         ),
                     })
 
-                payload = {
+                options_payload = {
                     "messaging_product": "whatsapp",
                     "to": to,
                     "type": "interactive",
@@ -150,7 +152,11 @@ def run():
                     },
                 }
 
-                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
+                session.post(
+                    Config.WHATSAPP_API_URL,
+                    json=options_payload,
+                    timeout=10
+                )
 
             else:
                 logger.warning(f"⚠️ Unknown task type: {task_type}")

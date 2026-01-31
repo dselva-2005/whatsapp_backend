@@ -1,11 +1,8 @@
-import requests
 import logging
-import time
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify
+
 from app.tasks.queue import enqueue
 from app.constants import PRODUCTS
-
-
 from app.db import (
     get_user,
     upsert_user,
@@ -24,11 +21,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whatsapp_webhook")
 
 
+# -------------------------------------------------
+# Queue helpers
+# -------------------------------------------------
 def send_text(to, text):
     enqueue({
         "type": "send_text",
         "to": to,
-        "text": text
+        "text": text,
     })
 
 
@@ -37,27 +37,14 @@ def send_image(to, image_url, caption=""):
         "type": "send_image",
         "to": to,
         "image_url": image_url,
-        "caption": caption
+        "caption": caption,
     })
 
 
-# -------------------------------------------------
-# Product preview images (send in sequence)
-# -------------------------------------------------
-def send_product_previews(to):
+def send_products_with_options(to):
     enqueue({
-        "type": "send_product_previews",
-        "to": to
-    })
-
-
-# -------------------------------------------------
-# Interactive options (after all previews)
-# -------------------------------------------------
-def send_options(to):
-    enqueue({
-        "type": "send_options",
-        "to": to
+        "type": "send_products_with_options",
+        "to": to,
     })
 
 
@@ -73,8 +60,9 @@ def webhook():
     handle_event(data)
     return jsonify({"status": "ok"}), 200
 
+
 # -------------------------------------------------
-# Core logic (SEQUENCE SAFE)
+# Core logic (STATE SAFE + ORDER SAFE)
 # -------------------------------------------------
 def handle_event(payload):
     try:
@@ -89,33 +77,33 @@ def handle_event(payload):
         user = get_user(from_number)
         state = user[1] if user else "START"
 
-        # Normalize incoming text (if any)
+        # Normalize text (if any)
         text_body = ""
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
 
         # -------------------------------------------------
-        # 🔒 TRIGGER GATE (ONLY START ON KEYWORD)
+        # 🔒 START GATE (KEYWORD ONLY)
         # -------------------------------------------------
         if state == "START":
             if msg_type != "text":
                 return
 
             if "khalifa melur" not in text_body:
-                # Ignore everything until trigger keyword appears
+                # Ignore all messages until keyword appears
                 return
 
-            # Trigger matched → start flow
             upsert_user(from_number, state="ASKED_NAME")
+
             send_text(
                 from_number,
                 "👋 Welcome to *Khalifa Hitech Mobile!*\n\nPlease tell us your *name*."
             )
             return
 
-        # ---------------------
+        # -------------------------------------------------
         # NAME RECEIVED
-        # ---------------------
+        # -------------------------------------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
             upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
@@ -125,17 +113,19 @@ def handle_event(payload):
                 f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
             )
 
-            # Send product previews first, then options
-            send_product_previews(from_number)
-            send_options(from_number)
+            # 🔥 ONE TASK → GUARANTEED ORDER
+            send_products_with_options(from_number)
             return
 
-        # ---------------------
+        # -------------------------------------------------
         # PRODUCT SELECTED
-        # ---------------------
+        # -------------------------------------------------
         if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
             if has_user_received(from_number):
-                send_text(from_number, "ℹ️ You have already received your discount code.")
+                send_text(
+                    from_number,
+                    "ℹ️ You have already received your discount code."
+                )
                 return
 
             if not can_send_image():
@@ -145,20 +135,31 @@ def handle_event(payload):
             opt_id = message["interactive"]["list_reply"]["id"]
             product = PRODUCTS.get(opt_id)
 
-            send_text(from_number, "🎁 Here is your exclusive discount code 👇")
-            send_image(from_number, product["code_image"], "Show this at the store")
+            if not product:
+                send_text(from_number, "⚠️ Invalid selection.")
+                return
+
+            send_text(
+                from_number,
+                "🎁 Here is your exclusive discount code 👇"
+            )
+            send_image(
+                from_number,
+                product["code_image"],
+                "Show this at the store"
+            )
 
             mark_user_received(from_number)
             increment_sent()
             upsert_user(from_number, state="COMPLETED")
             return
 
-        # ---------------------
+        # -------------------------------------------------
         # COMPLETED
-        # ---------------------
+        # -------------------------------------------------
         if state == "COMPLETED":
             send_text(from_number, "✅ Offer already used.")
             return
 
     except Exception:
-        logger.exception("Webhook error")
+        logger.exception("🔥 Webhook error")
