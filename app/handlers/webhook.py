@@ -2,6 +2,8 @@ import requests
 import logging
 import time
 from flask import Blueprint, request, jsonify, current_app
+from app.tasks.queue import enqueue
+
 
 from app.db import (
     get_user,
@@ -65,75 +67,41 @@ def _headers():
 
 
 def send_text(to, text):
-    payload = {
-        "messaging_product": "whatsapp",
+    enqueue({
+        "type": "send_text",
         "to": to,
-        "type": "text",
-        "text": {"body": text},
-    }
-    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
+        "text": text
+    })
 
 
 def send_image(to, image_url, caption=""):
-    payload = {
-        "messaging_product": "whatsapp",
+    enqueue({
+        "type": "send_image",
         "to": to,
-        "type": "image",
-        "image": {"link": image_url, "caption": caption},
-    }
-    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
+        "image_url": image_url,
+        "caption": caption
+    })
+
 
 # -------------------------------------------------
 # Product preview images (send in sequence)
 # -------------------------------------------------
 def send_product_previews(to):
-    """
-    Sends all product previews as separate images in sequence.
-    Ensures images are rendered correctly in WhatsApp.
-    """
-    for product in PRODUCTS.values():
-        offer_price = product["original"] - product["discount"]
-        caption = (
-            f"🛍️ *{product['name']}*\n"
-            f"MRP: ₹{product['original']}\n"
-            f"🔥 Offer: ₹{offer_price}\n"
-            f"💸 Save: ₹{product['discount']}"
-        )
-        send_image(to, product["preview_image"], caption)
-        time.sleep(0.3)  # small delay to ensure correct sequencing
+    enqueue({
+        "type": "send_product_previews",
+        "to": to
+    })
+
 
 # -------------------------------------------------
 # Interactive options (after all previews)
 # -------------------------------------------------
 def send_options(to):
-    rows = []
-    for opt_id, product in PRODUCTS.items():
-        offer_price = product["original"] - product["discount"]
-        rows.append({
-            "id": opt_id,
-            "title": product["name"],
-            "description": f"₹{product['original']} → ₹{offer_price}",
-        })
+    enqueue({
+        "type": "send_options",
+        "to": to
+    })
 
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": {"type": "text", "text": "🔥 Exclusive Discounts"},
-            "body": {"text": "Select ONE product to receive your discount code 👇"},
-            "footer": {"text": "Khalifa Hitech Mobile"},
-            "action": {
-                "button": "View Products",
-                "sections": [
-                    {"title": "Available Products", "rows": rows}
-                ],
-            },
-        },
-    }
-
-    requests.post(current_app.config["WHATSAPP_API_URL"], headers=_headers(), json=payload)
 
 # -------------------------------------------------
 # Webhook endpoint
