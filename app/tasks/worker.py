@@ -1,5 +1,4 @@
 import json
-import time
 import redis
 import requests
 import logging
@@ -62,59 +61,60 @@ def run():
             # SEND TEXT
             # -------------------------
             if task_type == "send_text":
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "to": to,
-                    "type": "text",
-                    "text": {"body": task["text"]},
-                }
-                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
+                session.post(
+                    Config.WHATSAPP_API_URL,
+                    json={
+                        "messaging_product": "whatsapp",
+                        "to": to,
+                        "type": "text",
+                        "text": {"body": task["text"]},
+                    },
+                    timeout=10,
+                )
 
             # -------------------------
             # SEND IMAGE (DISCOUNT CODE)
             # -------------------------
             elif task_type == "send_image":
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "to": to,
-                    "type": "image",
-                    "image": {
-                        "link": task["image_url"],
-                        "caption": task.get("caption", ""),
-                    },
-                }
-                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
-
-            # -------------------------------------------------
-            # SEND PRODUCTS (IMAGES FIRST → OPTIONS LAST)
-            # -------------------------------------------------
-            elif task_type == "send_products_with_options":
-
-                # 1️⃣ Product preview images
-                for product in PRODUCTS.values():
-                    caption = (
-                        f"*{product['name']}*\n"
-                        f"{format_price(product)}"
-                    )
-
-                    payload = {
+                session.post(
+                    Config.WHATSAPP_API_URL,
+                    json={
                         "messaging_product": "whatsapp",
                         "to": to,
                         "type": "image",
                         "image": {
-                            "link": product["preview_image"],
-                            "caption": caption,
+                            "link": task["image_url"],
+                            "caption": task.get("caption", ""),
                         },
-                    }
+                    },
+                    timeout=10,
+                )
 
+            # -------------------------------------------------
+            # SEND PRODUCTS (FAST, NO SLEEP)
+            # -------------------------------------------------
+            elif task_type == "send_products_with_options":
+
+                # 🔹 Send all product images consecutively
+                for product in PRODUCTS.values():
                     session.post(
                         Config.WHATSAPP_API_URL,
-                        json=payload,
-                        timeout=10
+                        json={
+                            "messaging_product": "whatsapp",
+                            "to": to,
+                            "type": "image",
+                            "image": {
+                                "link": product["preview_image"],
+                                "caption": (
+                                    f"*{product['name']}*\n"
+                                    f"{format_price(product)}"
+                                ),
+                            },
+                        },
+                        timeout=10,
                     )
-                    time.sleep(0.4)  # rate-safe + order-safe
 
-                # 2️⃣ Interactive options (AFTER images)
+                # 🔹 Send options (order relative to images not guaranteed)
                 rows = []
                 for pid, product in PRODUCTS.items():
                     original = product["original"]
@@ -131,31 +131,29 @@ def run():
                         ),
                     })
 
-                options_payload = {
-                    "messaging_product": "whatsapp",
-                    "to": to,
-                    "type": "interactive",
-                    "interactive": {
-                        "type": "list",
-                        "body": {
-                            "text": "🛍️ Choose a product to get your discount code"
-                        },
-                        "action": {
-                            "button": "View Products",
-                            "sections": [
-                                {
-                                    "title": "Available Offers",
-                                    "rows": rows,
-                                }
-                            ],
-                        },
-                    },
-                }
-
                 session.post(
                     Config.WHATSAPP_API_URL,
-                    json=options_payload,
-                    timeout=10
+                    json={
+                        "messaging_product": "whatsapp",
+                        "to": to,
+                        "type": "interactive",
+                        "interactive": {
+                            "type": "list",
+                            "body": {
+                                "text": "🛍️ Choose a product to get your discount code"
+                            },
+                            "action": {
+                                "button": "View Products",
+                                "sections": [
+                                    {
+                                        "title": "Available Offers",
+                                        "rows": rows,
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                    timeout=10,
                 )
 
             else:
@@ -163,7 +161,6 @@ def run():
 
         except Exception:
             logger.exception("🔥 Worker error")
-            time.sleep(1)
 
 
 if __name__ == "__main__":
