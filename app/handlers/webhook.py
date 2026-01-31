@@ -89,10 +89,23 @@ def handle_event(payload):
         user = get_user(from_number)
         state = user[1] if user else "START"
 
-        # ---------------------
-        # START
-        # ---------------------
-        if state == "START" and msg_type == "text":
+        # Normalize incoming text (if any)
+        text_body = ""
+        if msg_type == "text":
+            text_body = message["text"]["body"].strip().lower()
+
+        # -------------------------------------------------
+        # 🔒 TRIGGER GATE (ONLY START ON KEYWORD)
+        # -------------------------------------------------
+        if state == "START":
+            if msg_type != "text":
+                return
+
+            if "khalifa melur" not in text_body:
+                # Ignore everything until trigger keyword appears
+                return
+
+            # Trigger matched → start flow
             upsert_user(from_number, state="ASKED_NAME")
             send_text(
                 from_number,
@@ -111,12 +124,10 @@ def handle_event(payload):
                 from_number,
                 f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
             )
-            # Send interactive options after all images
-            send_options(from_number)
 
-            # Send all product images in sequence
+            # Send product previews first, then options
             send_product_previews(from_number)
-
+            send_options(from_number)
             return
 
         # ---------------------
