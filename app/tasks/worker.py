@@ -2,11 +2,15 @@ import json
 import time
 import redis
 import requests
+import logging
 
 from app.config import Config
-from app.handlers.webhook import PRODUCTS
+from app.constants import PRODUCTS
 
 QUEUE = "whatsapp_tasks"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("whatsapp_worker")
 
 
 def headers():
@@ -26,50 +30,102 @@ def run():
     session = requests.Session()
     session.headers.update(headers())
 
-    print("🚀 WhatsApp worker started")
+    logger.info("🚀 WhatsApp worker started")
 
     while True:
-        _, raw = r.blpop(QUEUE)
-        task = json.loads(raw)
+        try:
+            _, raw = r.blpop(QUEUE)
+            task = json.loads(raw)
 
-        t = task["type"]
-        to = task["to"]
+            task_type = task.get("type")
+            to = task.get("to")
 
-        if t == "send_text":
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to,
-                "type": "text",
-                "text": {"body": task["text"]},
-            }
-            session.post(Config.WHATSAPP_API_URL, json=payload)
+            if not task_type or not to:
+                logger.warning(f"⚠️ Invalid task skipped: {task}")
+                continue
 
-        elif t == "send_image":
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to,
-                "type": "image",
-                "image": {
-                    "link": task["image_url"],
-                    "caption": task["caption"],
-                },
-            }
-            session.post(Config.WHATSAPP_API_URL, json=payload)
+            # -------------------------
+            # SEND TEXT
+            # -------------------------
+            if task_type == "send_text":
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "text",
+                    "text": {"body": task["text"]},
+                }
+                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
-        elif t == "send_product_previews":
-            for product in PRODUCTS.values():
+            # -------------------------
+            # SEND IMAGE
+            # -------------------------
+            elif task_type == "send_image":
                 payload = {
                     "messaging_product": "whatsapp",
                     "to": to,
                     "type": "image",
                     "image": {
-                        "link": product["preview_image"],
-                        "caption": product["name"],
+                        "link": task["image_url"],
+                        "caption": task.get("caption", ""),
                     },
                 }
-                session.post(Config.WHATSAPP_API_URL, json=payload)
-                time.sleep(0.3)  # keep WhatsApp happy
+                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
 
-        elif t == "send_options":
-            # reuse existing logic
-            pass
+            # -------------------------
+            # SEND PRODUCT PREVIEWS (SEQUENTIAL)
+            # -------------------------
+            elif task_type == "send_product_previews":
+                for product in PRODUCTS.values():
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "to": to,
+                        "type": "image",
+                        "image": {
+                            "link": product["preview_image"],
+                            "caption": product["name"],
+                        },
+                    }
+                    session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
+                    time.sleep(0.3)  # WhatsApp rate safety
+
+            # -------------------------
+            # SEND INTERACTIVE OPTIONS
+            # -------------------------
+            elif task_type == "send_options":
+                rows = []
+                for pid, product in PRODUCTS.items():
+                    rows.append({
+                        "id": pid,
+                        "title": product["name"],
+                        "description": product.get("description", ""),
+                    })
+
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "list",
+                        "body": {
+                            "text": "🛍️ Choose a product to get your discount code"
+                        },
+                        "action": {
+                            "button": "View Products",
+                            "sections": [
+                                {
+                                    "title": "Available Offers",
+                                    "rows": rows,
+                                }
+                            ],
+                        },
+                    },
+                }
+
+                session.post(Config.WHATSAPP_API_URL, json=payload, timeout=10)
+
+            else:
+                logger.warning(f"⚠️ Unknown task type: {task_type}")
+
+        except Exception as e:
+            logger.exception("🔥 Worker error")
+            time.sleep(1)

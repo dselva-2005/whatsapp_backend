@@ -1,11 +1,11 @@
 import json
 import redis
-from flask import current_app
+from app.config import Config
 
 def get_redis():
     return redis.Redis(
-        host=current_app.config["REDIS_HOST"],
-        port=current_app.config["REDIS_PORT"],
+        host=Config.REDIS_HOST,
+        port=Config.REDIS_PORT,
         decode_responses=True
     )
 
