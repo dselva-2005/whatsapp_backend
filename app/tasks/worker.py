@@ -73,7 +73,7 @@ def run():
                 )
 
             # -------------------------
-            # SEND IMAGE (DISCOUNT CODE)
+            # SEND IMAGE
             # -------------------------
             elif task_type == "send_image":
                 session.post(
@@ -91,30 +91,11 @@ def run():
                 )
 
             # -------------------------------------------------
-            # SEND PRODUCTS (FAST, NO SLEEP)
+            # SEND PRODUCTS (OPTIONS FIRST → IMAGES NEXT)
             # -------------------------------------------------
             elif task_type == "send_products_with_options":
 
-                # 🔹 Send all product images consecutively
-                for product in PRODUCTS.values():
-                    session.post(
-                        Config.WHATSAPP_API_URL,
-                        json={
-                            "messaging_product": "whatsapp",
-                            "to": to,
-                            "type": "image",
-                            "image": {
-                                "link": product["preview_image"],
-                                "caption": (
-                                    f"*{product['name']}*\n"
-                                    f"{format_price(product)}"
-                                ),
-                            },
-                        },
-                        timeout=10,
-                    )
-
-                # 🔹 Send options (order relative to images not guaranteed)
+                # 1️⃣ Send interactive options FIRST (most reliable)
                 rows = []
                 for pid, product in PRODUCTS.items():
                     original = product["original"]
@@ -155,6 +136,25 @@ def run():
                     },
                     timeout=10,
                 )
+
+                # 2️⃣ Send all product images consecutively
+                for product in PRODUCTS.values():
+                    session.post(
+                        Config.WHATSAPP_API_URL,
+                        json={
+                            "messaging_product": "whatsapp",
+                            "to": to,
+                            "type": "image",
+                            "image": {
+                                "link": product["preview_image"],
+                                "caption": (
+                                    f"*{product['name']}*\n"
+                                    f"{format_price(product)}"
+                                ),
+                            },
+                        },
+                        timeout=10,
+                    )
 
             else:
                 logger.warning(f"⚠️ Unknown task type: {task_type}")
