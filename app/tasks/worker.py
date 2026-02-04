@@ -85,20 +85,20 @@ def run():
             # -------------------------------------------------
             elif task_type == "send_offer_bundle":
 
-                # 1️⃣ Send product preview image
-                session.post(
-                    Config.WHATSAPP_API_URL,
-                    json={
-                        "messaging_product": "whatsapp",
-                        "to": to,
-                        "type": "image",
-                        "image": {
-                            "link": PRODUCT["preview_image"],
-                            "caption": f"*{PRODUCT['name']}*",
-                        },
-                    },
-                    timeout=10,
-                )
+                # # 1️⃣ Send product preview image
+                # session.post(
+                #     Config.WHATSAPP_API_URL,
+                #     json={
+                #         "messaging_product": "whatsapp",
+                #         "to": to,
+                #         "type": "image",
+                #         "image": {
+                #             "link": PRODUCT["preview_image"],
+                #             "caption": f"*{PRODUCT['name']}*",
+                #         },
+                #     },
+                #     timeout=10,
+                # )
 
                 # 2️⃣ Send discount code image
                 session.post(
