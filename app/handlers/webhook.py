@@ -133,7 +133,7 @@ def handle_event(payload):
         # COMPLETED
         # -------------------------------------------------
         if state == "COMPLETED":
-            send_text(from_number, "✅ Offer already used.")
+            send_text(from_number, "நீங்கள் ஏற்கனவே கூப்பனுக்கு பதிவு செய்துவிட்டீர்கள்!")
             return
 
     except Exception:
