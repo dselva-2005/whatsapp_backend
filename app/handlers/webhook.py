@@ -2,7 +2,7 @@ import logging
 from flask import Blueprint, request, jsonify
 
 from app.tasks.queue import enqueue
-from app.constants import PRODUCTS
+from app.constants import PRODUCT
 from app.db import (
     get_user,
     upsert_user,
@@ -32,18 +32,15 @@ def send_text(to, text):
     })
 
 
-def send_image(to, image_url, caption=""):
+def send_offer_bundle(to):
+    """
+    Sends:
+    1) Product image
+    2) Discount code image
+    Guaranteed order via queue
+    """
     enqueue({
-        "type": "send_image",
-        "to": to,
-        "image_url": image_url,
-        "caption": caption,
-    })
-
-
-def send_products_with_options(to):
-    enqueue({
-        "type": "send_products_with_options",
+        "type": "send_offer_bundle",
         "to": to,
     })
 
@@ -67,6 +64,7 @@ def webhook():
 def handle_event(payload):
     try:
         value = payload["entry"][0]["changes"][0]["value"]
+
         if "messages" not in value:
             return
 
@@ -77,7 +75,7 @@ def handle_event(payload):
         user = get_user(from_number)
         state = user[1] if user else "START"
 
-        # Normalize text (if any)
+        # Normalize text
         text_body = ""
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
@@ -90,7 +88,6 @@ def handle_event(payload):
                 return
 
             if "khalifa melur" not in text_body:
-                # Ignore all messages until keyword appears
                 return
 
             upsert_user(from_number, state="ASKED_NAME")
@@ -102,56 +99,34 @@ def handle_event(payload):
             return
 
         # -------------------------------------------------
-        # NAME RECEIVED
+        # NAME RECEIVED → SEND OFFER DIRECTLY
         # -------------------------------------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
-            upsert_user(from_number, state="SHOWED_PRODUCTS", name=name)
 
-            send_text(
-                from_number,
-                f"Thanks, *{name}* 😊\n\nHere are today’s offers 👇"
-            )
-
-            # 🔥 ONE TASK → GUARANTEED ORDER
-            send_products_with_options(from_number)
-            return
-
-        # -------------------------------------------------
-        # PRODUCT SELECTED
-        # -------------------------------------------------
-        if state == "SHOWED_PRODUCTS" and msg_type == "interactive":
+            # Safety: already received
             if has_user_received(from_number):
-                send_text(
-                    from_number,
-                    "ℹ️ You have already received your discount code."
-                )
+                send_text(from_number, "ℹ️ You have already received this offer.")
+                upsert_user(from_number, state="COMPLETED")
                 return
 
+            # Quota check
             if not can_send_image():
-                send_text(from_number, "🚫 Discount quota exhausted.")
+                send_text(from_number, "🚫 Sorry, today’s discount quota is exhausted.")
                 return
 
-            opt_id = message["interactive"]["list_reply"]["id"]
-            product = PRODUCTS.get(opt_id)
-
-            if not product:
-                send_text(from_number, "⚠️ Invalid selection.")
-                return
+            upsert_user(from_number, state="COMPLETED", name=name)
 
             send_text(
                 from_number,
-                "🎁 Here is your exclusive discount code 👇"
+                f"Thanks, *{name}* 😊\n\n🎁 Here is your exclusive offer 👇"
             )
-            send_image(
-                from_number,
-                product["code_image"],
-                "Show this at the store"
-            )
+
+            # 🔥 Single queued task (order guaranteed)
+            send_offer_bundle(from_number)
 
             mark_user_received(from_number)
             increment_sent()
-            upsert_user(from_number, state="COMPLETED")
             return
 
         # -------------------------------------------------

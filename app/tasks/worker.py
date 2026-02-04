@@ -4,7 +4,7 @@ import requests
 import logging
 
 from app.config import Config
-from app.constants import PRODUCTS
+from app.constants import PRODUCT
 
 QUEUE = "whatsapp_tasks"
 
@@ -17,18 +17,6 @@ def headers():
         "Content-Type": "application/json",
         "apikey": Config.WHATSAPP_TOKEN,
     }
-
-
-def format_price(product: dict) -> str:
-    original = product["original"]
-    you_save = product["discount"]
-    offer = original - you_save
-
-    return (
-        f"Original: ₹{original}\n"
-        f"You save: ₹{you_save}\n"
-        f"Offer: ₹{offer}"
-    )
 
 
 def run():
@@ -67,13 +55,15 @@ def run():
                         "messaging_product": "whatsapp",
                         "to": to,
                         "type": "text",
-                        "text": {"body": task["text"]},
+                        "text": {
+                            "body": task["text"]
+                        },
                     },
                     timeout=10,
                 )
 
             # -------------------------
-            # SEND IMAGE
+            # SEND IMAGE (GENERIC)
             # -------------------------
             elif task_type == "send_image":
                 session.post(
@@ -91,70 +81,39 @@ def run():
                 )
 
             # -------------------------------------------------
-            # SEND PRODUCTS (OPTIONS FIRST → IMAGES NEXT)
+            # SEND OFFER BUNDLE (PRODUCT → CODE)
             # -------------------------------------------------
-            elif task_type == "send_products_with_options":
+            elif task_type == "send_offer_bundle":
 
-                # 1️⃣ Send interactive options FIRST (most reliable)
-                rows = []
-                for pid, product in PRODUCTS.items():
-                    original = product["original"]
-                    you_save = product["discount"]
-                    offer = original - you_save
-
-                    rows.append({
-                        "id": pid,
-                        "title": product["name"],
-                        "description": (
-                            f"Original ₹{original} | "
-                            f"You save ₹{you_save} | "
-                            f"Offer ₹{offer}"
-                        ),
-                    })
-
+                # 1️⃣ Send product preview image
                 session.post(
                     Config.WHATSAPP_API_URL,
                     json={
                         "messaging_product": "whatsapp",
                         "to": to,
-                        "type": "interactive",
-                        "interactive": {
-                            "type": "list",
-                            "body": {
-                                "text": "🛍️ Choose a product to get your discount code"
-                            },
-                            "action": {
-                                "button": "View Products",
-                                "sections": [
-                                    {
-                                        "title": "Available Offers",
-                                        "rows": rows,
-                                    }
-                                ],
-                            },
+                        "type": "image",
+                        "image": {
+                            "link": PRODUCT["preview_image"],
+                            "caption": f"*{PRODUCT['name']}*",
                         },
                     },
                     timeout=10,
                 )
 
-                # 2️⃣ Send all product images consecutively
-                for product in PRODUCTS.values():
-                    session.post(
-                        Config.WHATSAPP_API_URL,
-                        json={
-                            "messaging_product": "whatsapp",
-                            "to": to,
-                            "type": "image",
-                            "image": {
-                                "link": product["preview_image"],
-                                "caption": (
-                                    f"*{product['name']}*\n"
-                                    f"{format_price(product)}"
-                                ),
-                            },
+                # 2️⃣ Send discount code image
+                session.post(
+                    Config.WHATSAPP_API_URL,
+                    json={
+                        "messaging_product": "whatsapp",
+                        "to": to,
+                        "type": "image",
+                        "image": {
+                            "link": PRODUCT["code_image"],
+                            "caption": "🎟️ Show this code at the store",
                         },
-                        timeout=10,
-                    )
+                    },
+                    timeout=10,
+                )
 
             else:
                 logger.warning(f"⚠️ Unknown task type: {task_type}")
