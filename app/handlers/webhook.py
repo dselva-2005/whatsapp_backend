@@ -59,9 +59,8 @@ def generate_coupon(name: str, phone: str) -> str:
 
     name = name.strip()[:25]
     safe_phone = "".join(c for c in phone if c.isdigit())
-
-    draw.text((150, 1000), name, fill="white", font=font)
-    draw.text((150, 1050), f"Mobile: {safe_phone}", fill="white", font=font)
+    draw.text((100, 1000), name, fill="white", font=font)
+    draw.text((100, 1050), f"Mobile: {safe_phone}", fill="white", font=font)
 
     filename = f"coupon_{safe_phone}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
