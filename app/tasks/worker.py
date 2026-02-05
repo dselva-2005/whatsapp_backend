@@ -17,7 +17,7 @@ logger = logging.getLogger("whatsapp_worker")
 def headers():
     return {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {Config.WHATSAPP_TOKEN}",
+        "apikey": f"{Config.WHATSAPP_TOKEN}",
     }
 
 
