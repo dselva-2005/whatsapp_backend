@@ -26,7 +26,7 @@ logger = logging.getLogger("whatsapp_webhook")
 # Project paths (🔥 FIXED)
 # -------------------------------------------------
 BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
+    os.path.join(os.path.dirname(__file__), "..", "..","..")
 )
 
 STATIC_DIR = os.path.join(BASE_DIR, "static")
