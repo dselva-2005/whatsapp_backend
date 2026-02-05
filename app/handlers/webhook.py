@@ -215,6 +215,10 @@ def handle_event(payload):
         # COMPLETED
         # -------------------------------------------------
         if state == "COMPLETED":
+            if "khalifa melur" not in text_body:
+                logger.info("🚫 START: keyword mismatch")
+                return
+            
             logger.info("ℹ️ User already completed flow")
             send_text(from_number, "நீங்கள் ஏற்கனவே கூப்பனுக்கு பதிவு செய்துவிட்டீர்கள்!")
             return
