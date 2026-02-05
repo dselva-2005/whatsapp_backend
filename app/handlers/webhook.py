@@ -26,7 +26,7 @@ logger = logging.getLogger("whatsapp_webhook")
 # Project paths (🔥 FIXED)
 # -------------------------------------------------
 BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..","..")
+    os.path.join(os.path.dirname(__file__), "..", "..")
 )
 
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -42,25 +42,23 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 # Image generation
 # -------------------------------------------------
 def generate_coupon(name: str, phone: str) -> str:
-    """
-    Generates personalized coupon
-    Returns PUBLIC HTTPS URL
-    """
     os.makedirs(GENERATED_DIR, exist_ok=True)
 
-    img = Image.open(BASE_COUPON_PATH)
+    img = Image.open(BASE_COUPON_PATH).convert("RGBA")
     draw = ImageDraw.Draw(img)
 
     font = ImageFont.truetype(FONT_PATH, 40)
 
-    draw.text((200, 1000), name, fill="white", font=font)
-    draw.text((200, 1050), f"Mobile: {phone}", fill="white", font=font)
+    name = name.strip()[:25]
+    safe_phone = "".join(c for c in phone if c.isdigit())
 
-    filename = f"coupon_{phone}.png"
+    draw.text((200, 1000), name, fill="white", font=font)
+    draw.text((200, 1050), f"Mobile: {safe_phone}", fill="white", font=font)
+
+    filename = f"coupon_{safe_phone}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
     img.save(output_path)
 
-    # Public URL WhatsApp can access
     return f"{Config.BASE_URL}/static/images/generated/{filename}"
 
 
