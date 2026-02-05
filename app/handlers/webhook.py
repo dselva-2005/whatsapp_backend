@@ -69,7 +69,6 @@ def generate_coupon(name: str, phone: str) -> str:
 
     image_url = (
         f"{Config.BASE_URL}/static/images/generated/{filename}"
-        f"?v={int(time.time())}"
     )
 
     logger.info(f"✅ Coupon generated → {output_path}")
