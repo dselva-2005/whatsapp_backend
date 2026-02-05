@@ -55,16 +55,17 @@ def generate_coupon(name: str, phone: str) -> str:
     img = Image.open(BASE_COUPON_PATH).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    font = ImageFont.truetype(FONT_PATH, 40)
+    # Match local test settings
+    font = ImageFont.truetype(FONT_PATH, 30)
 
     name = name.strip()[:25]
     safe_phone = "".join(c for c in phone if c.isdigit())
 
     # -------------------------------------------------
-    # Text positioning (more to the LEFT from user POV)
+    # Text positioning (validated locally ✅)
     # -------------------------------------------------
     img_width, _ = img.size
-    x = int(img_width * 0.08)  # ~8% from left edge
+    x = int(img_width * 0.25)   # LEFT_PERCENT = 0.25
     y_name = 1000
     y_phone = 1050
 
