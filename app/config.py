@@ -8,3 +8,4 @@ class Config:
     PORT = int(os.getenv("PORT", 8000))
     REDIS_HOST = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    BASE_URL = "https://allspray.in"

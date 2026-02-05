@@ -1,8 +1,10 @@
 import logging
+import os
 from flask import Blueprint, request, jsonify
+from PIL import Image, ImageDraw, ImageFont
 
 from app.tasks.queue import enqueue
-from app.constants import PRODUCT
+from app.config import Config
 from app.db import (
     get_user,
     upsert_user,
@@ -20,6 +22,47 @@ webhook_bp = Blueprint("webhook", __name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whatsapp_webhook")
 
+# -------------------------------------------------
+# Project paths (🔥 FIXED)
+# -------------------------------------------------
+BASE_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+IMAGE_DIR = os.path.join(STATIC_DIR, "images")
+GENERATED_DIR = os.path.join(IMAGE_DIR, "generated")
+
+BASE_COUPON_PATH = os.path.join(IMAGE_DIR, "base_coupon.png")
+
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+# -------------------------------------------------
+# Image generation
+# -------------------------------------------------
+def generate_coupon(name: str, phone: str) -> str:
+    """
+    Generates personalized coupon
+    Returns PUBLIC HTTPS URL
+    """
+    os.makedirs(GENERATED_DIR, exist_ok=True)
+
+    img = Image.open(BASE_COUPON_PATH)
+    draw = ImageDraw.Draw(img)
+
+    font = ImageFont.truetype(FONT_PATH, 40)
+
+    draw.text((200, 1000), name, fill="white", font=font)
+    draw.text((200, 1050), f"Mobile: {phone}", fill="white", font=font)
+
+    filename = f"coupon_{phone}.png"
+    output_path = os.path.join(GENERATED_DIR, filename)
+    img.save(output_path)
+
+    # Public URL WhatsApp can access
+    return f"{Config.BASE_URL}/static/images/generated/{filename}"
+
 
 # -------------------------------------------------
 # Queue helpers
@@ -32,16 +75,12 @@ def send_text(to, text):
     })
 
 
-def send_offer_bundle(to):
-    """
-    Sends:
-    1) Product image
-    2) Discount code image
-    Guaranteed order via queue
-    """
+def send_image(to, image_url, caption=""):
     enqueue({
-        "type": "send_offer_bundle",
+        "type": "send_image",
         "to": to,
+        "image_url": image_url,
+        "caption": caption,
     })
 
 
@@ -75,13 +114,12 @@ def handle_event(payload):
         user = get_user(from_number)
         state = user[1] if user else "START"
 
-        # Normalize text
         text_body = ""
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
 
         # -------------------------------------------------
-        # 🔒 START GATE (KEYWORD ONLY)
+        # START GATE
         # -------------------------------------------------
         if state == "START":
             if msg_type != "text":
@@ -94,36 +132,39 @@ def handle_event(payload):
 
             send_text(
                 from_number,
-                "வணக்கம் கலிபா  ஹைடெக் மொபைல்ஸ் திறப்பு விழா ஆஃபர் பெற உங்களது பெயரை உள்ளிடவும்"
+                "வணக்கம் கலிபா ஹைடெக் மொபைல்ஸ் திறப்பு விழா ஆஃபர் பெற உங்களது பெயரை உள்ளிடவும்"
             )
             return
 
         # -------------------------------------------------
-        # NAME RECEIVED → SEND OFFER DIRECTLY
+        # NAME RECEIVED → GENERATE & SEND COUPON
         # -------------------------------------------------
         if state == "ASKED_NAME" and msg_type == "text":
             name = message["text"]["body"].strip()
 
-            # Safety: already received
             if has_user_received(from_number):
-                send_text(from_number, "ℹ️ You have already received this offer.")
+                send_text(from_number, "ℹ️ நீங்கள் ஏற்கனவே கூப்பனை பெற்றுவிட்டீர்கள்.")
                 upsert_user(from_number, state="COMPLETED")
                 return
 
-            # Quota check
             if not can_send_image():
-                send_text(from_number, "🚫 Sorry, today’s discount quota is exhausted.")
+                send_text(from_number, "🚫 இன்று கூப்பன் அளவு முடிந்துவிட்டது.")
                 return
 
             upsert_user(from_number, state="COMPLETED", name=name)
 
             send_text(
                 from_number,
-                f"கலிபா வின்  திறப்பு விழா ஆஃபர் பெற உறுதி செய்யப்பட்டுவிட்டீர்கள் இதோ உங்களுக்கான கூப்பன்"
+                "🎉 கலிபா ஹைடெக் மொபைல்ஸ் திறப்பு விழா ஆஃபர் உறுதி செய்யப்பட்டது!"
             )
 
-            # 🔥 Single queued task (order guaranteed)
-            send_offer_bundle(from_number)
+            image_url = generate_coupon(name, from_number)
+
+            send_image(
+                from_number,
+                image_url,
+                "🎟️ இந்த கூப்பனை கடையில் காட்டவும்"
+            )
 
             mark_user_received(from_number)
             increment_sent()

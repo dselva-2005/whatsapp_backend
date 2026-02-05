@@ -4,7 +4,6 @@ import requests
 import logging
 
 from app.config import Config
-from app.constants import PRODUCT
 
 QUEUE = "whatsapp_tasks"
 
@@ -12,13 +11,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whatsapp_worker")
 
 
+# -------------------------------------------------
+# WhatsApp headers
+# -------------------------------------------------
 def headers():
     return {
         "Content-Type": "application/json",
-        "apikey": Config.WHATSAPP_TOKEN,
+        "Authorization": f"Bearer {Config.WHATSAPP_TOKEN}",
     }
 
 
+# -------------------------------------------------
+# Worker loop
+# -------------------------------------------------
 def run():
     r = redis.Redis(
         host=Config.REDIS_HOST,
@@ -49,7 +54,7 @@ def run():
             # SEND TEXT
             # -------------------------
             if task_type == "send_text":
-                session.post(
+                response = session.post(
                     Config.WHATSAPP_API_URL,
                     json={
                         "messaging_product": "whatsapp",
@@ -62,65 +67,43 @@ def run():
                     timeout=10,
                 )
 
+                logger.info(f"✅ Text sent → {response.status_code}")
+
             # -------------------------
-            # SEND IMAGE (GENERIC)
+            # SEND IMAGE (PUBLIC URL)
             # -------------------------
             elif task_type == "send_image":
-                session.post(
+                image_url = task.get("image_url")
+
+                if not image_url:
+                    logger.warning("⚠️ send_image task missing image_url")
+                    continue
+
+                response = session.post(
                     Config.WHATSAPP_API_URL,
                     json={
                         "messaging_product": "whatsapp",
                         "to": to,
                         "type": "image",
                         "image": {
-                            "link": task["image_url"],
+                            "link": image_url,
                             "caption": task.get("caption", ""),
                         },
                     },
                     timeout=10,
                 )
 
-            # -------------------------------------------------
-            # SEND OFFER BUNDLE (PRODUCT → CODE)
-            # -------------------------------------------------
-            elif task_type == "send_offer_bundle":
-
-                # # 1️⃣ Send product preview image
-                # session.post(
-                #     Config.WHATSAPP_API_URL,
-                #     json={
-                #         "messaging_product": "whatsapp",
-                #         "to": to,
-                #         "type": "image",
-                #         "image": {
-                #             "link": PRODUCT["preview_image"],
-                #             "caption": f"*{PRODUCT['name']}*",
-                #         },
-                #     },
-                #     timeout=10,
-                # )
-
-                # 2️⃣ Send discount code image
-                session.post(
-                    Config.WHATSAPP_API_URL,
-                    json={
-                        "messaging_product": "whatsapp",
-                        "to": to,
-                        "type": "image",
-                        "image": {
-                            "link": PRODUCT["code_image"],
-                            "caption": "🎟️ Show this code at the store",
-                        },
-                    },
-                    timeout=10,
-                )
+                logger.info(f"🖼️ Image sent → {response.status_code}")
 
             else:
                 logger.warning(f"⚠️ Unknown task type: {task_type}")
 
         except Exception:
-            logger.exception("🔥 Worker error")
+            logger.exception("🔥 Worker crashed while processing task")
 
 
+# -------------------------------------------------
+# Entry
+# -------------------------------------------------
 if __name__ == "__main__":
     run()
