@@ -59,16 +59,25 @@ def generate_coupon(name: str, phone: str) -> str:
 
     name = name.strip()[:25]
     safe_phone = "".join(c for c in phone if c.isdigit())
-    draw.text((100, 1000), name, fill="white", font=font)
-    draw.text((100, 1050), f"Mobile: {safe_phone[2:]}", fill="white", font=font)
+
+    # -------------------------------------------------
+    # Text positioning (more to the LEFT from user POV)
+    # -------------------------------------------------
+    img_width, _ = img.size
+    x = int(img_width * 0.08)  # ~8% from left edge
+    y_name = 1000
+    y_phone = 1050
+
+    logger.info(f"✏️ Drawing text at x={x}, y={y_name}/{y_phone}")
+
+    draw.text((x, y_name), name, fill="white", font=font)
+    draw.text((x, y_phone), f"Mobile: {safe_phone}", fill="white", font=font)
 
     filename = f"coupon_{safe_phone}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
     img.save(output_path)
 
-    image_url = (
-        f"{Config.BASE_URL}/static/images/generated/{filename}"
-    )
+    image_url = f"{Config.BASE_URL}/static/images/generated/{filename}"
 
     logger.info(f"✅ Coupon generated → {output_path}")
     logger.info(f"🌍 Public image URL → {image_url}")
