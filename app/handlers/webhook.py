@@ -35,7 +35,7 @@ GENERATED_DIR = os.path.join(IMAGE_DIR, "generated")
 
 BASE_COUPON_PATH = os.path.join(IMAGE_DIR, "base_coupon.png")
 
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH = os.path.join(STATIC_DIR, "fonts","DejaVuSans-Bold.ttf")
 
 
 # -------------------------------------------------
