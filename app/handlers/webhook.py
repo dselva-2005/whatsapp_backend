@@ -86,7 +86,7 @@ def generate_coupon(name: str, phone: str) -> str:
     draw.text((x_text, Y_PHONE), f"Mobile: {safe_phone}", fill="white", font=font)
 
     # -----------------------------
-    # Generate QR (same as preview)
+    # Generate QR
     # -----------------------------
     qr_data = f"KHALIFA|{safe_phone}"
 
@@ -115,9 +115,10 @@ def generate_coupon(name: str, phone: str) -> str:
     img.paste(qr_img, (qr_x, qr_y))
 
     # -----------------------------
-    # Save
+    # Save (UNIQUE filename → no cache issues)
     # -----------------------------
-    filename = f"coupon_{safe_phone}.png"
+    timestamp = int(time.time())
+    filename = f"coupon_{safe_phone}_{timestamp}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
     img.save(output_path)
 
@@ -127,6 +128,7 @@ def generate_coupon(name: str, phone: str) -> str:
     logger.info(f"🌍 Public image URL → {image_url}")
 
     return image_url
+
 
 # -------------------------------------------------
 # Queue helpers
