@@ -57,47 +57,66 @@ def generate_coupon(name: str, phone: str) -> str:
     img = Image.open(BASE_COUPON_PATH).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    font = ImageFont.truetype(FONT_PATH, 30)
+    # -----------------------------
+    # Text config (LOCKED)
+    # -----------------------------
+    FONT_SIZE = 30
+    Y_NAME = 1000
+    Y_PHONE = 1050
+    LEFT_PERCENT = 0.25
+
+    # -----------------------------
+    # QR config (LOCKED)
+    # -----------------------------
+    QR_SIZE = 260
+    TEXT_TO_QR_GAP = 110
+
+    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
     name = name.strip()[:25]
     safe_phone = "".join(c for c in phone if c.isdigit())
 
     img_width, _ = img.size
-    x = int(img_width * 0.25)
-    y_name = 1000
-    y_phone = 1050
+    x_text = int(img_width * LEFT_PERCENT)
 
-    # ---- Draw text ----
-    draw.text((x, y_name), name, fill="white", font=font)
-    draw.text((x, y_phone), f"Mobile: {safe_phone}", fill="white", font=font)
+    # -----------------------------
+    # Draw text
+    # -----------------------------
+    draw.text((x_text, Y_NAME), name, fill="white", font=font)
+    draw.text((x_text, Y_PHONE), f"Mobile: {safe_phone}", fill="white", font=font)
 
-    # -------------------------------------------------
-    # QR CODE GENERATION
-    # -------------------------------------------------
+    # -----------------------------
+    # Generate QR (same as preview)
+    # -----------------------------
+    qr_data = f"KHALIFA|{safe_phone}"
+
     qr = qrcode.QRCode(
-        version=2,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_Q,
         box_size=10,
         border=2,
     )
-    qr.add_data(safe_phone)
+    qr.add_data(qr_data)
     qr.make(fit=True)
 
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    qr_img = qr.make_image(
+        fill_color="black",
+        back_color="white"
+    ).convert("RGB")
 
-    # Resize QR (adjust if needed)
-    qr_size = 260
-    qr_img = qr_img.resize((qr_size, qr_size), Image.LANCZOS)
+    qr_img = qr_img.resize((QR_SIZE, QR_SIZE), Image.LANCZOS)
 
-    # Center alignment
-    qr_x = (img_width - qr_size) // 2
-    qr_y = y_phone + 20
+    # -----------------------------
+    # Center-align QR
+    # -----------------------------
+    qr_x = (img_width - QR_SIZE) // 2
+    qr_y = Y_PHONE + TEXT_TO_QR_GAP
 
     img.paste(qr_img, (qr_x, qr_y))
 
-    # -------------------------------------------------
+    # -----------------------------
     # Save
-    # -------------------------------------------------
+    # -----------------------------
     filename = f"coupon_{safe_phone}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
     img.save(output_path)
