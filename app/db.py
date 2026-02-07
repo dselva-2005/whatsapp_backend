@@ -125,3 +125,36 @@ def upsert_user(phone: str, state: str, name: str | None = None):
                 name = COALESCE(excluded.name, users.name)
         """, (phone, name, state))
         conn.commit()
+
+
+def redeem_user(phone: str) -> str:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+
+        cur.execute(
+            "SELECT state FROM users WHERE phone = ?",
+            (phone,)
+        )
+        row = cur.fetchone()
+
+        if not row:
+            conn.rollback()
+            return "NOT_FOUND"
+
+        state = row[0]
+
+        if state == "REDEEMED":
+            conn.rollback()
+            return "ALREADY_REDEEMED"
+
+        if state != "COMPLETED":
+            conn.rollback()
+            return "NOT_ELIGIBLE"
+
+        cur.execute(
+            "UPDATE users SET state = 'REDEEMED' WHERE phone = ?",
+            (phone,)
+        )
+        conn.commit()
+        return "REDEEMED"

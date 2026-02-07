@@ -2,6 +2,7 @@ import logging
 import os
 from flask import Blueprint, request, jsonify
 from PIL import Image, ImageDraw, ImageFont
+import qrcode
 import time
 
 from app.tasks.queue import enqueue
@@ -47,6 +48,7 @@ logger.info(f"🔤 FONT_PATH={FONT_PATH}")
 # -------------------------------------------------
 # Image generation
 # -------------------------------------------------
+
 def generate_coupon(name: str, phone: str) -> str:
     logger.info(f"🧩 Generating coupon for {phone} | name='{name}'")
 
@@ -55,25 +57,47 @@ def generate_coupon(name: str, phone: str) -> str:
     img = Image.open(BASE_COUPON_PATH).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # Match local test settings
     font = ImageFont.truetype(FONT_PATH, 30)
 
     name = name.strip()[:25]
     safe_phone = "".join(c for c in phone if c.isdigit())
 
-    # -------------------------------------------------
-    # Text positioning (validated locally ✅)
-    # -------------------------------------------------
     img_width, _ = img.size
-    x = int(img_width * 0.25)   # LEFT_PERCENT = 0.25
+    x = int(img_width * 0.25)
     y_name = 1000
     y_phone = 1050
 
-    logger.info(f"✏️ Drawing text at x={x}, y={y_name}/{y_phone}")
-
+    # ---- Draw text ----
     draw.text((x, y_name), name, fill="white", font=font)
     draw.text((x, y_phone), f"Mobile: {safe_phone}", fill="white", font=font)
 
+    # -------------------------------------------------
+    # QR CODE GENERATION
+    # -------------------------------------------------
+    qr = qrcode.QRCode(
+        version=2,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(safe_phone)
+    qr.make(fit=True)
+
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+    # Resize QR (adjust if needed)
+    qr_size = 260
+    qr_img = qr_img.resize((qr_size, qr_size), Image.LANCZOS)
+
+    # Center alignment
+    qr_x = (img_width - qr_size) // 2
+    qr_y = y_phone + 20
+
+    img.paste(qr_img, (qr_x, qr_y))
+
+    # -------------------------------------------------
+    # Save
+    # -------------------------------------------------
     filename = f"coupon_{safe_phone}.png"
     output_path = os.path.join(GENERATED_DIR, filename)
     img.save(output_path)
@@ -84,7 +108,6 @@ def generate_coupon(name: str, phone: str) -> str:
     logger.info(f"🌍 Public image URL → {image_url}")
 
     return image_url
-
 
 # -------------------------------------------------
 # Queue helpers
