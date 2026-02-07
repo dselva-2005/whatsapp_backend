@@ -88,7 +88,7 @@ def generate_coupon(name: str, phone: str) -> str:
     # -----------------------------
     # Generate QR
     # -----------------------------
-    qr_data = f"KHALIFA|{safe_phone}"
+    qr_data = f"{safe_phone}"
 
     qr = qrcode.QRCode(
         version=None,
