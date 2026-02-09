@@ -16,13 +16,14 @@ def qr_status(phone):
             "can_redeem": False
         }), 404
 
-    name, state = user
+    name, state, redeemed_at = user
 
     return jsonify({
         "phone": phone,
         "name": name,
         "state": state,
-        "can_redeem": state == "COMPLETED"
+        "can_redeem": state == "COMPLETED",
+        "redeemed_at": redeemed_at  # null if not redeemed
     })
 
 

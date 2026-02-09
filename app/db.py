@@ -1,8 +1,10 @@
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime, timezone
 
 DB_PATH = Path("quota.db")
+
 
 # Use WAL mode for better concurrency
 def init_db():
@@ -11,29 +13,36 @@ def init_db():
         cur.execute("PRAGMA journal_mode=WAL;")
 
         # Global quota
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS quota (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 max_images INTEGER NOT NULL,
                 sent_images INTEGER NOT NULL
             )
-        """)
+        """
+        )
 
         # Per-user final receive tracking
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS sent_users (
                 phone TEXT PRIMARY KEY
             )
-        """)
+        """
+        )
 
         # User conversation state
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
                 phone TEXT PRIMARY KEY,
                 name TEXT,
-                state TEXT NOT NULL
+                state TEXT NOT NULL,
+                redeemed_at TEXT
             )
-        """)
+        """
+        )
 
         # Initialize quota row if missing
         cur.execute("SELECT COUNT(*) FROM quota")
@@ -47,7 +56,9 @@ def init_db():
 @contextmanager
 def get_conn():
     """Provide a thread-safe connection using WAL mode."""
-    conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)  # autocommit off for transactions
+    conn = sqlite3.connect(
+        DB_PATH, timeout=30, isolation_level=None
+    )  # autocommit off for transactions
     try:
         yield conn
     finally:
@@ -109,21 +120,27 @@ def can_send_image() -> bool:
 def get_user(phone: str):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT name, state FROM users WHERE phone = ?", (phone,))
-        return cur.fetchone()  # (name, state) or None
+        cur.execute(
+            "SELECT name, state, redeemed_at FROM users WHERE phone = ?",
+            (phone,)
+        )
+        return cur.fetchone()  # (name, state, redeemed_at)
 
 
 def upsert_user(phone: str, state: str, name: str | None = None):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO users (phone, name, state)
             VALUES (?, ?, ?)
             ON CONFLICT(phone)
             DO UPDATE SET
                 state = excluded.state,
                 name = COALESCE(excluded.name, users.name)
-        """, (phone, name, state))
+        """,
+            (phone, name, state),
+        )
         conn.commit()
 
 
@@ -152,9 +169,18 @@ def redeem_user(phone: str) -> str:
             conn.rollback()
             return "NOT_ELIGIBLE"
 
+        redeemed_at = datetime.now(timezone.utc).isoformat()
+
         cur.execute(
-            "UPDATE users SET state = 'REDEEMED' WHERE phone = ?",
-            (phone,)
+            """
+            UPDATE users
+            SET state = 'REDEEMED',
+                redeemed_at = ?
+            WHERE phone = ?
+            """,
+            (redeemed_at, phone)
         )
+
         conn.commit()
         return "REDEEMED"
+

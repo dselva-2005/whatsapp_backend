@@ -125,6 +125,10 @@ class _QRScannerPageState extends State<QRScannerPage> {
   }
 }
 
+/* =========================
+   USER STATUS CARD
+========================= */
+
 class UserStatusCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onRedeem;
@@ -135,9 +139,19 @@ class UserStatusCard extends StatelessWidget {
     required this.onRedeem,
   });
 
+  String formatTimestamp(String isoString) {
+    final dateTime = DateTime.parse(isoString).toLocal();
+    return "${dateTime.day.toString().padLeft(2, '0')}-"
+        "${dateTime.month.toString().padLeft(2, '0')}-"
+        "${dateTime.year}  "
+        "${dateTime.hour.toString().padLeft(2, '0')}:"
+        "${dateTime.minute.toString().padLeft(2, '0')}";
+  }
+
   @override
   Widget build(BuildContext context) {
     final canRedeem = data["can_redeem"] == true;
+    final redeemedAt = data["redeemed_at"];
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -149,6 +163,18 @@ class UserStatusCard extends StatelessWidget {
             Text("Phone: ${data["phone"] ?? "-"}"),
             Text("Name: ${data["name"] ?? "-"}"),
             Text("State: ${data["state"] ?? "-"}"),
+
+            if (redeemedAt != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                "Redeemed at: ${formatTimestamp(redeemedAt)}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: canRedeem ? onRedeem : null,
